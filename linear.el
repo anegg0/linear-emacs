@@ -23,7 +23,6 @@
 (require 'json)
 (require 'dash)
 (require 's)
-(require 'url)
 
 (defgroup linear nil
   "Integration with Linear issue tracking."
@@ -60,14 +59,11 @@
   "Return headers for Linear API requests."
   (unless linear-api-key
     (error "Linear API key not set. Use M-x customize-variable RET linear-api-key"))
-  (when (string-match-p "[\n\r\t ]" linear-api-key)
-    (message "Warning: API key contains whitespace which may cause authentication issues"))
 
-  ;; Ensure the API key is trimmed of any whitespace
-  (let ((clean-key (string-trim linear-api-key)))
-    `(("Content-Type" . "application/json")
-      ;; Linear API uses direct token auth - not Bearer token
-      ("Authorization" . ,clean-key))))
+  ;; For personal API keys, the format is: "Authorization: <API_KEY>"
+  ;; No "Bearer" prefix for personal API keys
+  `(("Content-Type" . "application/json")
+    ("Authorization" . ,linear-api-key)))
 
 (defun linear--log (format-string &rest args)
   "Log message with FORMAT-STRING and ARGS if debug is enabled."
@@ -86,59 +82,24 @@
                                      ,@(when variables `(("variables" . ,variables)))))))
     (linear--log "Request payload: %s" request-data)
 
-    ;; Log the actual headers being sent (with token partially redacted)
-    (let ((headers (linear--headers)))
-      (linear--log "Headers: %s"
-                   (prin1-to-string
-                    (mapcar (lambda (header)
-                              (if (equal (car header) "Authorization")
-                                  (cons "Authorization"
-                                        (replace-regexp-in-string
-                                         "\\(Bearer \\).+"
-                                         "\\1[REDACTED]"
-                                         (cdr header)))
-                                header))
-                            headers))))
-
-    ;; Use url-retrieve-synchronously for a more direct HTTP request
-    ;; that may provide better debugging information
-    (let* ((url-request-method "POST")
-           (url-request-extra-headers (linear--headers))
-           (url-request-data request-data)
-           (url-buffer (condition-case err
-                           (url-retrieve-synchronously linear-graphql-url)
-                         (error
-                          (linear--log "URL retrieve error: %s" (error-message-string err))
-                          nil))))
-
-      (when url-buffer
-        (with-current-buffer url-buffer
-          (linear--log "Raw response buffer: %s" (buffer-string))
-
-          ;; Check HTTP status code
-          (goto-char (point-min))
-          (if (not (re-search-forward "HTTP/[0-9.]+ \\([0-9]+\\)" nil t))
-              (linear--log "Could not find HTTP status code")
-            (let ((status-code (string-to-number (match-string 1))))
-              (linear--log "HTTP status code: %d" status-code)
-
-              (if (>= status-code 400)
-                  (setq error-response (format "HTTP error %d" status-code))
-
-                ;; Try to parse the JSON response
-                (goto-char (point-min))
-                (re-search-forward "\n\n" nil t) ; Skip headers
-                (condition-case json-err
-                    (let ((json-data (json-read)))
-                      (linear--log "Response received: %s" (prin1-to-string json-data))
-                      (setq response json-data))
-                  (error
-                   (linear--log "JSON parse error: %s" (error-message-string json-err))
-                   (setq error-response (format "JSON parse error: %s" (error-message-string json-err))))))))))
-
-      ;; Cleanup
-      (when url-buffer
-        (kill-buffer url-buffer)))
+    (request
+      linear-graphql-url
+      :type "POST"
+      :headers (linear--headers)
+      :data request-data
+      :parser 'json-read
+      :sync t
+      :success (cl-function
+                (lambda (&key data &allow-other-keys)
+                  (linear--log "Response received: %s" (prin1-to-string data))
+                  (setq response data)))
+      :error (cl-function
+              (lambda (&key error-thrown response data &allow-other-keys)
+                (setq error-response error-thrown)
+                (linear--log "Error: %s" error-thrown)
+                (linear--log "Response status: %s" (request-response-status-code response))
+                (when data
+                  (linear--log "Error response: %s" (prin1-to-string data))))))
 
     (if error-response
         (progn
@@ -271,57 +232,20 @@
   (interactive)
   (if linear-api-key
       (progn
-        (message "API key is set. Testing connection...")
+        (message "API key is set (length: %d). Testing connection..." (length linear-api-key))
         (linear-test-connection))
     (message "Linear API key is not set. Use M-x customize-variable RET linear-api-key")))
 
 ;;;###autoload
-(defun linear-debug-auth ()
-  "Debug authentication issues with Linear API."
+(defun linear-load-api-key-from-env ()
+  "Try to load Linear API key from environment variable."
   (interactive)
-  (setq linear-debug t)
-  (linear--log "Starting authentication debug")
-
-  ;; Check API key
-  (if (null linear-api-key)
-      (message "Linear API key is not set")
-    (progn
-      ;; Check for whitespace in key
-      (when (string-match-p "[\n\r\t ]" linear-api-key)
-        (message "Warning: API key contains whitespace which may cause authentication issues"))
-
-      ;; Verify key format
-      (let ((key-length (length linear-api-key)))
-        (linear--log "API key length: %d" key-length)
-        (if (< key-length 20)
-            (message "API key seems too short (%d chars). Linear keys are typically longer" key-length)
-          (message "API key length seems reasonable (%d chars)" key-length)))
-
-      ;; Report key first/last chars (redacted middle)
-      (when (> (length linear-api-key) 8)
-        (let ((visible-prefix (substring linear-api-key 0 4))
-              (visible-suffix (substring linear-api-key -4)))
-          (linear--log "API key preview: %s...%s" visible-prefix visible-suffix)))
-
-      ;; Try a minimal query with extra auth debugging
-      (message "Testing authentication with minimal query...")
-      (let* ((query "query { viewer { id } }")
-             (url-request-method "POST")
-             (url-request-extra-headers (linear--headers))
-             (url-request-data (json-encode `(("query" . ,query)))))
-
-        (linear--log "Request URL: %s" linear-graphql-url)
-        (linear--log "Request method: %s" url-request-method)
-        (linear--log "Request data: %s" url-request-data)
-
-        (condition-case err
-            (let ((url-buffer (url-retrieve-synchronously linear-graphql-url)))
-              (when url-buffer
-                (with-current-buffer url-buffer
-                  (linear--log "Full response:\n%s" (buffer-string))
-                  (message "Check *Messages* buffer for detailed authentication debug info"))))
-          (error
-           (message "Error during authentication test: %s" (error-message-string err))))))))
+  (let ((env-key (getenv "LINEAR_API_KEY")))
+    (if env-key
+        (progn
+          (setq linear-api-key env-key)
+          (message "Loaded Linear API key from LINEAR_API_KEY environment variable"))
+      (message "LINEAR_API_KEY environment variable not found or empty"))))
 
 (provide 'linear)
 ;;; linear.el ends here
