@@ -146,6 +146,84 @@
       (message "Failed to retrieve issues")
       nil)))
 
+(defun linear-get-states (team-id)
+  "Get workflow states for the given TEAM-ID."
+  (linear--log "Fetching workflow states for team %s" team-id)
+  (let* ((query "query GetWorkflowStates($teamId: String!) {
+                  team(id: $teamId) {
+                    states {
+                      nodes {
+                        id
+                        name
+                        color
+                      }
+                    }
+                  }
+                }")
+         (variables `(("teamId" . ,team-id)))
+         (response (linear--graphql-request query variables)))
+    (when response
+      (cdr (assoc 'nodes (assoc 'states (assoc 'team (assoc 'data response))))))))
+
+(defun linear-get-priorities ()
+  "Get priority options for Linear issues."
+  ;; Linear uses integers for priorities: 0 (No priority), 1 (Urgent), 2 (High), 3 (Medium), 4 (Low)
+  '(("No priority" . 0)
+    ("Urgent" . 1)
+    ("High" . 2)
+    ("Medium" . 3)
+    ("Low" . 4)))
+
+(defun linear-get-team-members (team-id)
+  "Get members for the given TEAM-ID."
+  (linear--log "Fetching team members for team %s" team-id)
+  (let* ((query "query GetTeamMembers($teamId: String!) {
+                  team(id: $teamId) {
+                    members {
+                      nodes {
+                        user {
+                          id
+                          name
+                          displayName
+                        }
+                      }
+                    }
+                  }
+                }")
+         (variables `(("teamId" . ,team-id)))
+         (response (linear--graphql-request query variables)))
+    (when response
+      (let ((members (cdr (assoc 'nodes (assoc 'members (assoc 'team (assoc 'data response)))))))
+        (mapcar (lambda (member)
+                  (let ((user (cdr (assoc 'user member))))
+                    (cons (or (cdr (assoc 'displayName user))
+                              (cdr (assoc 'name user)))
+                          (cdr (assoc 'id user)))))
+                members)))))
+
+(defun linear-get-issue-types (team-id)
+  "Get issue types for the given TEAM-ID."
+  (linear--log "Fetching issue types for team %s" team-id)
+  (let* ((query "query GetIssueTypes($teamId: String!) {
+                  team(id: $teamId) {
+                    issueLabels {
+                      nodes {
+                        id
+                        name
+                        color
+                      }
+                    }
+                  }
+                }")
+         (variables `(("teamId" . ,team-id)))
+         (response (linear--graphql-request query variables)))
+    (when response
+      (let ((labels (cdr (assoc 'nodes (assoc 'issueLabels (assoc 'team (assoc 'data response)))))))
+        (mapcar (lambda (label)
+                  (cons (cdr (assoc 'name label))
+                        (cdr (assoc 'id label))))
+                labels)))))
+
 (defun linear-create-issue (title description team-id)
   "Create a new issue with TITLE, DESCRIPTION, and TEAM-ID."
   (linear--log "Creating issue: %s" title)
@@ -213,16 +291,89 @@
 
 ;;;###autoload
 (defun linear-new-issue ()
-  "Create a new Linear issue."
+  "Create a new Linear issue with additional attributes."
   (interactive)
+  ;; Select team first (needed for states, members, etc.)
   (let* ((team (if linear-default-team-id
                    (list (cons 'id linear-default-team-id))
                  (linear-select-team)))
-         (team-id (cdr (assoc 'id team)))
-         (title (read-string "Issue title: "))
-         (description (read-string "Description: ")))
+         (team-id (cdr (assoc 'id team))))
+
     (if team-id
-        (linear-create-issue title description team-id)
+        (let* ((title (read-string "Issue title: "))
+               (description (read-string "Description: "))
+
+               ;; Get workflow states
+               (states (linear-get-states team-id))
+               (state-options (when states
+                                (mapcar (lambda (state)
+                                          (cons (cdr (assoc 'name state))
+                                                (cdr (assoc 'id state))))
+                                        states)))
+               (selected-state (when state-options
+                                 (cdr (assoc (completing-read "State: " state-options nil t)
+                                             state-options))))
+
+               ;; Get priorities
+               (priority-options (linear-get-priorities))
+               (selected-priority (cdr (assoc (completing-read "Priority: " priority-options nil t)
+                                              priority-options)))
+
+               ;; Get team members for assignee
+               (members (linear-get-team-members team-id))
+               (selected-assignee (when members
+                                    (cdr (assoc (completing-read "Assignee: " members nil t)
+                                                members))))
+
+               ;; Estimate (points)
+               (estimate (read-string "Estimate (points, leave empty for none): "))
+               (estimate-num (when (and estimate (not (string-empty-p estimate)))
+                               (string-to-number estimate)))
+
+               ;; Issue type (label)
+               (issue-types (linear-get-issue-types team-id))
+               (selected-type (when issue-types
+                                (cdr (assoc (completing-read "Issue type: " issue-types nil t)
+                                            issue-types))))
+
+               ;; Prepare mutation
+               (query "mutation CreateIssue($input: IssueCreateInput!) {
+                         issueCreate(input: $input) {
+                           success
+                           issue {
+                             id
+                             identifier
+                             title
+                           }
+                         }
+                       }")
+
+               ;; Build input variables
+               (input `(("title" . ,title)
+                        ("description" . ,description)
+                        ("teamId" . ,team-id)
+                        ,@(when selected-state
+                            `(("stateId" . ,selected-state)))
+                        ,@(when selected-priority
+                            `(("priority" . ,selected-priority)))
+                        ,@(when selected-assignee
+                            `(("assigneeId" . ,selected-assignee)))
+                        ,@(when estimate-num
+                            `(("estimate" . ,estimate-num)))
+                        ,@(when selected-type
+                            `(("labelIds" . [,selected-type])))))
+
+               (variables `(("input" . ,input)))
+               (response (linear--graphql-request query `(("input" . ,input)))))
+
+          (if response
+              (let ((issue-data (assoc 'issue (assoc 'issueCreate (assoc 'data response)))))
+                (message "Created issue %s: %s"
+                         (cdr (assoc 'identifier issue-data))
+                         (cdr (assoc 'title issue-data)))
+                issue-data)
+            (message "Failed to create issue")))
+
       (message "No team selected"))))
 
 ;;;###autoload
