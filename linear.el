@@ -194,13 +194,19 @@
     (if issues
         (with-current-buffer buffer
           (erase-buffer)
+          (insert (format "%-10s %-15s %s\n" "ID" "Status" "Title"))
+          (insert (make-string 70 ?-))
+          (insert "\n")
+          ;; Convert vector to list if needed
+          (when (vectorp issues)
+            (setq issues (append issues nil)))
           (dolist (issue issues)
             (let ((id (cdr (assoc 'id issue)))
                   (identifier (cdr (assoc 'identifier issue)))
                   (title (cdr (assoc 'title issue)))
                   (state (cdr (assoc 'name (assoc 'state issue))))
                   (color (cdr (assoc 'color (assoc 'state issue)))))
-              (insert (format "%-10s %-12s %s\n" identifier state title))))
+              (insert (format "%-10s %-15s %s\n" identifier state title))))
           (goto-char (point-min))
           (switch-to-buffer buffer))
       (message "No issues found or failed to retrieve issues"))))
