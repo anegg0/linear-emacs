@@ -181,11 +181,9 @@
                   team(id: $teamId) {
                     members {
                       nodes {
-                        user {
-                          id
-                          name
-                          displayName
-                        }
+                        id
+                        name
+                        displayName
                       }
                     }
                   }
@@ -197,10 +195,9 @@
         (linear--log "Retrieved %d team members" (length members))
         (let ((formatted-members
                (mapcar (lambda (member)
-                         (let ((user (cdr (assoc 'user member))))
-                           (cons (or (cdr (assoc 'displayName user))
-                                     (cdr (assoc 'name user)))
-                                 (cdr (assoc 'id user)))))
+                         (cons (or (cdr (assoc 'displayName member))
+                                   (cdr (assoc 'name member)))
+                               (cdr (assoc 'id member))))
                        members)))
           (linear--log "Formatted team members: %s" (prin1-to-string formatted-members))
           formatted-members)))))
@@ -221,7 +218,7 @@
   (linear--log "Fetching issue types for team %s" team-id)
   (let* ((query "query GetIssueTypes($teamId: String!) {
                   team(id: $teamId) {
-                    issueLabels {
+                    labels {
                       nodes {
                         id
                         name
@@ -233,7 +230,7 @@
          (variables `(("teamId" . ,team-id)))
          (response (linear--graphql-request query variables)))
     (when response
-      (let ((labels (cdr (assoc 'nodes (assoc 'issueLabels (assoc 'team (assoc 'data response)))))))
+      (let ((labels (cdr (assoc 'nodes (assoc 'labels (assoc 'team (assoc 'data response)))))))
         (mapcar (lambda (label)
                   (cons (cdr (assoc 'name label))
                         (cdr (assoc 'id label))))
