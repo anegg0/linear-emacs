@@ -336,16 +336,12 @@
 
                ;; Get team members for assignee
                (members (linear-get-team-members team-id))
-               (member-names (when members
-                               (mapcar (lambda (member-pair)
-                                         (car member-pair))
-                                       members)))
-               (selected-member-name (when member-names
-                                       (completing-read "Assignee (or press Enter to skip): "
-                                                        member-names nil nil)))
-               (selected-assignee (if (string-empty-p selected-member-name)
-                                      nil
-                                    (cdr (assoc selected-member-name members))))
+               (assignee-prompt (completing-read
+                                 "Assignee: "
+                                 (mapcar #'car members)
+                                 nil nil nil nil ""))
+               (selected-assignee (unless (string-empty-p assignee-prompt)
+                                    (cdr (assoc assignee-prompt members))))
 
                ;; Estimate (points)
                (estimate (read-string "Estimate (points, leave empty for none): "))
