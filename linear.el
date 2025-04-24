@@ -201,6 +201,12 @@
                           (cdr (assoc 'id user)))))
                 members)))))
 
+(defun linear-select-assignee (team-id)
+  "Prompt user to select an assignee from team with TEAM-ID."
+  (let* ((members (linear-get-team-members team-id))
+         (selected (completing-read "Assignee: " members nil t)))
+    (cdr (assoc selected members))))
+
 (defun linear-get-issue-types (team-id)
   "Get issue types for the given TEAM-ID."
   (linear--log "Fetching issue types for team %s" team-id)
@@ -290,7 +296,6 @@
       (message "No issues found or failed to retrieve issues"))))
 
 ;;;###autoload
-;;;###autoload
 (defun linear-new-issue ()
   "Create a new Linear issue with additional attributes."
   (interactive)
@@ -320,7 +325,7 @@
                (selected-priority (cdr (assoc (completing-read "Priority: " priority-options nil t)
                                               priority-options)))
 
-               ;; Get assignee
+               ;; Get team members for assignee
                (selected-assignee (linear-select-assignee team-id))
 
                ;; Estimate (points)
