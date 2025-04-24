@@ -194,18 +194,27 @@
          (response (linear--graphql-request query variables)))
     (when response
       (let ((members (cdr (assoc 'nodes (assoc 'members (assoc 'team (assoc 'data response)))))))
-        (mapcar (lambda (member)
-                  (let ((user (cdr (assoc 'user member))))
-                    (cons (or (cdr (assoc 'displayName user))
-                              (cdr (assoc 'name user)))
-                          (cdr (assoc 'id user)))))
-                members)))))
+        (linear--log "Retrieved %d team members" (length members))
+        (let ((formatted-members
+               (mapcar (lambda (member)
+                         (let ((user (cdr (assoc 'user member))))
+                           (cons (or (cdr (assoc 'displayName user))
+                                     (cdr (assoc 'name user)))
+                                 (cdr (assoc 'id user)))))
+                       members)))
+          (linear--log "Formatted team members: %s" (prin1-to-string formatted-members))
+          formatted-members)))))
 
 (defun linear-select-assignee (team-id)
   "Prompt user to select an assignee from team with TEAM-ID."
   (let* ((members (linear-get-team-members team-id))
-         (selected (completing-read "Assignee: " members nil t)))
-    (cdr (assoc selected members))))
+         (member-options (if members
+                             members
+                           '(("None" . nil))))
+         (selected (completing-read "Assignee (or press Enter to skip): " member-options nil nil)))
+    (if (string-empty-p selected)
+        nil
+      (cdr (assoc selected member-options)))))
 
 (defun linear-get-issue-types (team-id)
   "Get issue types for the given TEAM-ID."
@@ -326,7 +335,17 @@
                                               priority-options)))
 
                ;; Get team members for assignee
-               (selected-assignee (linear-select-assignee team-id))
+               (members (linear-get-team-members team-id))
+               (member-names (when members
+                               (mapcar (lambda (member-pair)
+                                         (car member-pair))
+                                       members)))
+               (selected-member-name (when member-names
+                                       (completing-read "Assignee (or press Enter to skip): "
+                                                        member-names nil nil)))
+               (selected-assignee (if (string-empty-p selected-member-name)
+                                      nil
+                                    (cdr (assoc selected-member-name members))))
 
                ;; Estimate (points)
                (estimate (read-string "Estimate (points, leave empty for none): "))
