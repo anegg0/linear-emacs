@@ -202,17 +202,6 @@
           (linear--log "Formatted team members: %s" (prin1-to-string formatted-members))
           formatted-members)))))
 
-(defun linear-select-assignee (team-id)
-  "Prompt user to select an assignee from team with TEAM-ID."
-  (let* ((members (linear-get-team-members team-id))
-         (member-options (if members
-                             members
-                           '(("None" . nil))))
-         (selected (completing-read "Assignee (or press Enter to skip): " member-options nil nil)))
-    (if (string-empty-p selected)
-        nil
-      (cdr (assoc selected member-options)))))
-
 (defun linear-get-issue-types (team-id)
   "Get issue types for the given TEAM-ID."
   (linear--log "Fetching issue types for team %s" team-id)
@@ -347,9 +336,22 @@
 
                ;; Issue type (label)
                (issue-types (linear-get-issue-types team-id))
-               (selected-type (when issue-types
-                                (cdr (assoc (completing-read "Issue type: " issue-types nil t)
-                                            issue-types))))
+               (label-names (mapcar #'car issue-types))
+               (label-prompt (completing-read
+                              "Label (type for fuzzy search): "
+                              label-names
+                              nil nil nil nil ""))
+               (matching-labels (when (not (string-empty-p label-prompt))
+                                  (cl-remove-if-not
+                                   (lambda (label-name)
+                                     (string-match-p (regexp-quote label-prompt) label-name))
+                                   label-names)))
+               (selected-label-name (if (= (length matching-labels) 1)
+                                        (car matching-labels)
+                                      (when matching-labels
+                                        (completing-read "Select specific label: " matching-labels nil t))))
+               (selected-type (when (and selected-label-name (not (string-empty-p selected-label-name)))
+                                (cdr (assoc selected-label-name issue-types))))
 
                ;; Prepare mutation
                (query "mutation CreateIssue($input: IssueCreateInput!) {
