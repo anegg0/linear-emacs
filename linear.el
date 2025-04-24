@@ -337,15 +337,35 @@
                ;; Issue type (label)
                (issue-types (linear-get-issue-types team-id))
                (label-names (mapcar #'car issue-types))
+               ;; Group labels by category (e.g., "Docs", "Feature", etc.)
+               (label-categories (let ((categories (make-hash-table :test 'equal)))
+                                   (dolist (label label-names)
+                                     (when-let* ((parts (split-string label " - " t))
+                                                 (category (car parts)))
+                                       (puthash category
+                                                (cons label (gethash category categories nil))
+                                                categories)))
+                                   categories))
+               (category-names (hash-table-keys label-categories))
+               ;; First select a category, then a specific label
+               (selected-category (completing-read
+                                   "Label category: "
+                                   (append '("All") category-names)
+                                   nil nil nil nil "All"))
+               (filtered-labels (if (string= selected-category "All")
+                                    label-names
+                                  (gethash selected-category label-categories nil)))
                (label-prompt (completing-read
-                              "Label (type for fuzzy search): "
-                              label-names
+                              (if (string= selected-category "All")
+                                  "Label (type for fuzzy search): "
+                                (format "Label in %s category: " selected-category))
+                              filtered-labels
                               nil nil nil nil ""))
                (matching-labels (when (not (string-empty-p label-prompt))
                                   (cl-remove-if-not
                                    (lambda (label-name)
                                      (string-match-p (regexp-quote label-prompt) label-name))
-                                   label-names)))
+                                   filtered-labels)))
                (selected-label-name (if (= (length matching-labels) 1)
                                         (car matching-labels)
                                       (when matching-labels
