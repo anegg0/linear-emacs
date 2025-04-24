@@ -290,6 +290,7 @@
       (message "No issues found or failed to retrieve issues"))))
 
 ;;;###autoload
+;;;###autoload
 (defun linear-new-issue ()
   "Create a new Linear issue with additional attributes."
   (interactive)
@@ -319,11 +320,8 @@
                (selected-priority (cdr (assoc (completing-read "Priority: " priority-options nil t)
                                               priority-options)))
 
-               ;; Get team members for assignee
-               (members (linear-get-team-members team-id))
-               (selected-assignee (when members
-                                    (cdr (assoc (completing-read "Assignee: " members nil t)
-                                                members))))
+               ;; Get assignee
+               (selected-assignee (linear-select-assignee team-id))
 
                ;; Estimate (points)
                (estimate (read-string "Estimate (points, leave empty for none): "))
