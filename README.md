@@ -16,12 +16,12 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 1. Clone this repository:
    ```
-   git clone https://github.com/anegg0/linearel.git
+   git clone https://github.com/anegg0/linear-emacs.git
    ```
 
 2. Add the following to your Emacs configuration:
    ```elisp
-   (add-to-list 'load-path "/path/to/linearel")
+   (add-to-list 'load-path "/path/to/linear-emacs")
    (require 'linear)
    ```
 
@@ -34,7 +34,7 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 ```elisp
 (use-package linear
-  :straight (:host github :repo "anegg0/linearel")
+  :straight (:host github :repo "anegg0/linear-emacs")
   :config
   (setq linear-api-key "your-api-key-here"))
 ```
@@ -44,7 +44,7 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 ```elisp
 ;; In packages.el
 (package! linear
-  :recipe (:host github :repo "anegg0/linearel" :files ("*.el")))
+  :recipe (:host github :repo "anegg0/linear-emacs" :files ("*.el")))
 
 ;; In config.el
 (use-package linear
