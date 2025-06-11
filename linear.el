@@ -1,4 +1,5 @@
 
+
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
@@ -321,6 +322,7 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
             (insert "#+TAGS: :\n")
             (insert "#+filetags: :twai:b:\n")
             (insert "#+STARTUP: overview\n")
+            (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
             (insert ":END:\n\n")
 
             ;; Insert issues
