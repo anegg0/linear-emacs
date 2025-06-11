@@ -1,3 +1,4 @@
+
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
@@ -133,7 +134,29 @@
 (defun linear-get-issues ()
   "Get a list of issues assigned to the user."
   (linear--log "Fetching assigned issues")
-  (let* ((query "query { viewer { assignedIssues { nodes { id identifier title state { name color } } } } }")
+  (let* ((query "query {
+                 viewer {
+                   assignedIssues {
+                     nodes {
+                       id
+                       identifier
+                       title
+                       description
+                       priority
+                       state { name color }
+                       team { id name }
+                       labels {
+                         nodes {
+                           name
+                         }
+                       }
+                       project {
+                         name
+                       }
+                     }
+                   }
+                 }
+               }")
          (response (linear--graphql-request query)))
     (if response
         (if (assoc 'data response)
@@ -266,28 +289,106 @@
 
 ;;;###autoload
 (defun linear-list-issues ()
-  "Display a list of the user's assigned Linear issues."
+  "Update linear.org file with assigned Linear issues and display it.
+Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCKED."
   (interactive)
   (let* ((issues (linear-get-issues))
-         (buffer (get-buffer-create "*Linear Issues*")))
+         (org-file-path (expand-file-name "~/Library/CloudStorage/ProtonDrive-gael.blanchemain@protonmail.com-folder/orgmode/gtd/linear.org"))
+         ;; Define the list of statuses to include (case insensitive)
+         (include-statuses '("todo" "in progress" "in review" "backlog" "blocked")))
     (if issues
-        (with-current-buffer buffer
-          (erase-buffer)
-          (insert (format "%-10s %-15s %s\n" "ID" "Status" "Title"))
-          (insert (make-string 70 ?-))
-          (insert "\n")
-          ;; Convert vector to list if needed
+        (progn
+          ;; Make sure issues is a list, not a vector
           (when (vectorp issues)
             (setq issues (append issues nil)))
-          (dolist (issue issues)
-            (let ((id (cdr (assoc 'id issue)))
-                  (identifier (cdr (assoc 'identifier issue)))
-                  (title (cdr (assoc 'title issue)))
-                  (state (cdr (assoc 'name (assoc 'state issue))))
-                  (color (cdr (assoc 'color (assoc 'state issue)))))
-              (insert (format "%-10s %-15s %s\n" identifier state title))))
-          (goto-char (point-min))
-          (switch-to-buffer buffer))
+
+          ;; Filter issues based on status
+          (setq issues
+                (seq-filter
+                 (lambda (issue)
+                   (let* ((state-assoc (assoc 'state issue))
+                          (state (and state-assoc (cdr (assoc 'name state-assoc))))
+                          (state-lower (and state (downcase state))))
+                     (member state-lower include-statuses)))
+                 issues))
+
+          ;; Update org file
+          (with-temp-buffer
+            ;; Insert header
+            (insert ":PROPERTIES:\n")
+            (insert ":ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae\n")
+            (insert "#+title: Linear issues assigned to me\n")
+            (insert "#+TAGS: :\n")
+            (insert "#+filetags: :twai:b:\n")
+            (insert "#+STARTUP: overview\n")
+            (insert ":END:\n\n")
+
+            ;; Insert issues
+            (dolist (issue issues)
+              (let* ((id (cdr (assoc 'id issue)))
+                     (identifier (cdr (assoc 'identifier issue)))
+                     (title (cdr (assoc 'title issue)))
+                     (description (or (cdr (assoc 'description issue)) ""))
+                     (priority-num (cdr (assoc 'priority issue)))
+                     (state-assoc (assoc 'state issue))
+                     (state (and state-assoc (cdr (assoc 'name state-assoc))))
+                     ;; Map Linear states to org TODO states
+                     (todo-state (cond
+                                  ((string-equal state "Done") "DONE")
+                                  ((string-equal state "Todo") "TODO")
+                                  ((string-equal state "In Progress") "IN-PROGRESS")
+                                  ((string-equal state "In Review") "IN-REVIEW")
+                                  ((string-equal state "Backlog") "BACKLOG")
+                                  ((string-equal state "Blocked") "BLOCKED")
+                                  (t "TODO")))
+                     ;; Convert Linear priority (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low) to Org priority
+                     (priority (cond ((eq priority-num 1) "[#A]") ; Urgent -> A
+                                     ((eq priority-num 2) "[#B]") ; High -> B
+                                     ((eq priority-num 3) "[#C]") ; Medium -> C
+                                     ((eq priority-num 4) "[#D]") ; Low -> D
+                                     (t "[#A]"))) ; Default or no priority -> A
+                     (team-assoc (assoc 'team issue))
+                     (team-name (and team-assoc (cdr (assoc 'name team-assoc))))
+                     (team-name (or team-name ""))
+                     (project-assoc (assoc 'project issue))
+                     (project-name (and project-assoc (cdr (assoc 'name project-assoc))))
+                     (project-name (or project-name ""))
+                     (labels-assoc (assoc 'labels issue))
+                     (labels-nodes (and labels-assoc (cdr (assoc 'nodes labels-assoc))))
+                     (labels (if (and labels-nodes (not (eq labels-nodes 'null)))
+                                 (if (vectorp labels-nodes)
+                                     (setq labels-nodes (append labels-nodes nil)))
+                               (mapconcat (lambda (label)
+                                            (cdr (assoc 'name label)))
+                                          labels-nodes ", ")
+                               ""))
+                     (link (format "https://linear.app/issue/%s" identifier)))
+
+                ;; Insert the task with proper format
+                (insert (format "*** %s %s %s\n" todo-state priority title))
+                (insert ":PROPERTIES:\n")
+                (insert (format ":ID:       %s\n" id))
+                (insert (format ":ID-LINEAR: %s\n" identifier))
+                (insert (format ":TEAM: %s\n" team-name))
+                (insert (format ":DESCRIPTION: \"%s\"\n" description))
+                (insert (format ":PRIORITY: %s\n"
+                                (cond ((eq priority-num 1) "Urgent")
+                                      ((eq priority-num 2) "High")
+                                      ((eq priority-num 3) "Medium")
+                                      ((eq priority-num 4) "Low")
+                                      (t "Medium"))))
+                (insert (format ":LABELS: [%s]\n" labels))
+                (insert (format ":PROJECT: %s\n" project-name))
+                (insert (format ":LINK: %s\n" link))
+                (insert ":END:\n")))
+
+            ;; Write to file
+            (write-region (point-min) (point-max) org-file-path))
+
+          ;; Open the org file
+          (find-file org-file-path)
+          (message "Updated Linear issues in %s with %d active issues"
+                   org-file-path (length issues)))
       (message "No issues found or failed to retrieve issues"))))
 
 ;;;###autoload
