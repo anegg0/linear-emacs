@@ -1,5 +1,4 @@
 
-
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
@@ -132,12 +131,12 @@
          (selected (completing-read "Select team: " team-names nil t)))
     (cdr (assoc selected team-names))))
 
-(defun linear-get-issues ()
-  "Get a list of issues assigned to the user."
-  (linear--log "Fetching assigned issues")
-  (let* ((query "query {
+(defun linear-get-issues-page (&optional after)
+  "Get a page of issues assigned to the user starting AFTER the given cursor."
+  (linear--log "Fetching assigned issues page %s" (if after (format "after %s" after) "first page"))
+  (let* ((query "query GetAssignedIssues($first: Int!, $after: String) {
                  viewer {
-                   assignedIssues {
+                   assignedIssues(first: $first, after: $after) {
                      nodes {
                        id
                        identifier
@@ -155,20 +154,92 @@
                          name
                        }
                      }
+                     pageInfo {
+                       hasNextPage
+                       endCursor
+                     }
                    }
                  }
                }")
-         (response (linear--graphql-request query)))
+         (variables `(("first" . 100) ; Fetch 100 issues per page
+                      ,@(when after `(("after" . ,after)))))
+         (response (linear--graphql-request query variables)))
+    (linear--log "Response: %s" (prin1-to-string response))
     (if response
         (if (assoc 'data response)
-            (let ((issues (cdr (assoc 'nodes (assoc 'assignedIssues (assoc 'viewer (assoc 'data response)))))))
-              (linear--log "Retrieved %d issues" (length issues))
-              (setq linear--cache-issues issues)
-              issues)
-          (message "Invalid response format from Linear API")
-          nil)
-      (message "Failed to retrieve issues")
-      nil)))
+            (let* ((viewer (assoc 'viewer (assoc 'data response)))
+                   (assigned-issues (and viewer (assoc 'assignedIssues viewer))))
+              (if assigned-issues
+                  (let* ((issues (cdr (assoc 'nodes assigned-issues)))
+                         (page-info (cdr (assoc 'pageInfo assigned-issues)))
+                         (has-next-page (and page-info (eq (cdr (assoc 'hasNextPage page-info)) t)))
+                         (end-cursor (and page-info (cdr (assoc 'endCursor page-info)))))
+                    (linear--log "Retrieved %d issues, has next page: %s, end cursor: %s"
+                                 (length issues) has-next-page end-cursor)
+                    (list :issues issues :has-next-page has-next-page :end-cursor end-cursor))
+                (progn
+                  (linear--log "No assignedIssues found in response")
+                  (list :issues nil :has-next-page nil :end-cursor nil))))
+          (progn
+            (linear--log "Invalid response format from Linear API: %s" (prin1-to-string response))
+            (message "Invalid response format from Linear API")
+            nil))
+      (progn
+        (message "Failed to retrieve issues")
+        nil))))
+
+(defun linear-get-issues ()
+  "Get a list of all issues assigned to the user with pagination."
+  (linear--log "Fetching all assigned issues with pagination")
+
+  (let ((all-issues '())
+        (has-more t)
+        (cursor nil)
+        (page-num 1)
+        (max-pages 10)) ;; Safety limit to prevent infinite loops
+
+    ;; Loop through all pages
+    (while (and has-more (< page-num max-pages))
+      (linear--log "Fetching page %d of issues" page-num)
+      (let ((page-result (linear-get-issues-page cursor)))
+        (if page-result
+            (let ((page-issues (plist-get page-result :issues))
+                  (next-has-more (plist-get page-result :has-next-page))
+                  (next-cursor (plist-get page-result :end-cursor)))
+
+              ;; Only process if we have issues
+              (if page-issues
+                  (progn
+                    ;; Append issues from this page
+                    (when (vectorp page-issues)
+                      (setq page-issues (append page-issues nil)))
+                    (setq all-issues (append all-issues page-issues))
+
+                    ;; Update pagination state
+                    (setq has-more next-has-more)
+                    (setq cursor next-cursor)
+                    (setq page-num (1+ page-num))
+
+                    (linear--log "Retrieved %d issues from page %d, has more: %s"
+                                 (length page-issues) (1- page-num) has-more))
+
+                ;; No issues on this page
+                (progn
+                  (linear--log "No issues found on page %d" page-num)
+                  (setq has-more nil))))
+
+          ;; Error occurred
+          (progn
+            (linear--log "Error fetching page %d" page-num)
+            (setq has-more nil)))))
+
+    (when (>= page-num max-pages)
+      (linear--log "Reached maximum page limit (%d pages)" max-pages))
+
+    ;; Return the aggregated issues
+    (linear--log "Retrieved a total of %d issues across %d pages" (length all-issues) (1- page-num))
+    (setq linear--cache-issues all-issues)
+    all-issues))
 
 (defun linear-get-states (team-id)
   "Get workflow states for the given TEAM-ID."
@@ -293,11 +364,13 @@
   "Update linear.org file with assigned Linear issues and display it.
 Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCKED."
   (interactive)
+  (linear--log "Executing linear-list-issues")
   (let* ((issues (linear-get-issues))
          (org-file-path (expand-file-name "~/Library/CloudStorage/ProtonDrive-gael.blanchemain@protonmail.com-folder/orgmode/gtd/linear.org"))
          ;; Define the list of statuses to include (case insensitive)
          (include-statuses '("todo" "in progress" "in review" "backlog" "blocked")))
-    (if issues
+    (linear--log "Retrieved %d total issues before filtering" (length issues))
+    (if (and issues (> (length issues) 0))
         (progn
           ;; Make sure issues is a list, not a vector
           (when (vectorp issues)
@@ -310,87 +383,104 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                    (let* ((state-assoc (assoc 'state issue))
                           (state (and state-assoc (cdr (assoc 'name state-assoc))))
                           (state-lower (and state (downcase state))))
+                     (linear--log "Issue %s has state: %s (include: %s)"
+                                  (cdr (assoc 'identifier issue))
+                                  state-lower
+                                  (if (member state-lower include-statuses) "yes" "no"))
                      (member state-lower include-statuses)))
                  issues))
 
+          (linear--log "After filtering by status, have %d issues" (length issues))
+
           ;; Update org file
-          (with-temp-buffer
-            ;; Insert header
-            (insert ":PROPERTIES:\n")
-            (insert ":ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae\n")
-            (insert "#+title: Linear issues assigned to me\n")
-            (insert "#+TAGS: :\n")
-            (insert "#+filetags: :twai:b:\n")
-            (insert "#+STARTUP: overview\n")
-            (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
-            (insert ":END:\n\n")
+          (condition-case err
+              (progn
+                (with-temp-buffer
+                  ;; Insert header
+                  (insert ":PROPERTIES:\n")
+                  (insert ":ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae\n")
+                  (insert "#+title: Linear issues assigned to me\n")
+                  (insert "#+TAGS: :\n")
+                  (insert "#+filetags: :twai:b:\n")
+                  (insert "#+STARTUP: overview\n")
+                  (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
+                  (insert ":END:\n\n")
 
-            ;; Insert issues
-            (dolist (issue issues)
-              (let* ((id (cdr (assoc 'id issue)))
-                     (identifier (cdr (assoc 'identifier issue)))
-                     (title (cdr (assoc 'title issue)))
-                     (description (or (cdr (assoc 'description issue)) ""))
-                     (priority-num (cdr (assoc 'priority issue)))
-                     (state-assoc (assoc 'state issue))
-                     (state (and state-assoc (cdr (assoc 'name state-assoc))))
-                     ;; Map Linear states to org TODO states
-                     (todo-state (cond
-                                  ((string-equal state "Done") "DONE")
-                                  ((string-equal state "Todo") "TODO")
-                                  ((string-equal state "In Progress") "IN-PROGRESS")
-                                  ((string-equal state "In Review") "IN-REVIEW")
-                                  ((string-equal state "Backlog") "BACKLOG")
-                                  ((string-equal state "Blocked") "BLOCKED")
-                                  (t "TODO")))
-                     ;; Convert Linear priority (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low) to Org priority
-                     (priority (cond ((eq priority-num 1) "[#A]") ; Urgent -> A
-                                     ((eq priority-num 2) "[#B]") ; High -> B
-                                     ((eq priority-num 3) "[#C]") ; Medium -> C
-                                     ((eq priority-num 4) "[#D]") ; Low -> D
-                                     (t "[#A]"))) ; Default or no priority -> A
-                     (team-assoc (assoc 'team issue))
-                     (team-name (and team-assoc (cdr (assoc 'name team-assoc))))
-                     (team-name (or team-name ""))
-                     (project-assoc (assoc 'project issue))
-                     (project-name (and project-assoc (cdr (assoc 'name project-assoc))))
-                     (project-name (or project-name ""))
-                     (labels-assoc (assoc 'labels issue))
-                     (labels-nodes (and labels-assoc (cdr (assoc 'nodes labels-assoc))))
-                     (labels (if (and labels-nodes (not (eq labels-nodes 'null)))
-                                 (if (vectorp labels-nodes)
-                                     (setq labels-nodes (append labels-nodes nil)))
-                               (mapconcat (lambda (label)
-                                            (cdr (assoc 'name label)))
-                                          labels-nodes ", ")
-                               ""))
-                     (link (format "https://linear.app/issue/%s" identifier)))
+                  ;; Insert issues
+                  (dolist (issue issues)
+                    (let* ((id (cdr (assoc 'id issue)))
+                           (identifier (cdr (assoc 'identifier issue)))
+                           (title (cdr (assoc 'title issue)))
+                           (description (or (cdr (assoc 'description issue)) ""))
+                           (priority-num (cdr (assoc 'priority issue)))
+                           (state-assoc (assoc 'state issue))
+                           (state (and state-assoc (cdr (assoc 'name state-assoc))))
+                           ;; Map Linear states to org TODO states
+                           (todo-state (cond
+                                        ((string-equal state "Done") "DONE")
+                                        ((string-equal state "Todo") "TODO")
+                                        ((string-equal state "In Progress") "IN-PROGRESS")
+                                        ((string-equal state "In Review") "IN-REVIEW")
+                                        ((string-equal state "Backlog") "BACKLOG")
+                                        ((string-equal state "Blocked") "BLOCKED")
+                                        (t "TODO")))
+                           ;; Convert Linear priority (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low) to Org priority
+                           (priority (cond ((eq priority-num 1) "[#A]") ; Urgent -> A
+                                           ((eq priority-num 2) "[#B]") ; High -> B
+                                           ((eq priority-num 3) "[#C]") ; Medium -> C
+                                           ((eq priority-num 4) "[#D]") ; Low -> D
+                                           (t "[#C]"))) ; Default -> C
+                           (team-assoc (assoc 'team issue))
+                           (team-name (and team-assoc (cdr (assoc 'name team-assoc))))
+                           (team-name (or team-name ""))
+                           (project-assoc (assoc 'project issue))
+                           (project-name (and project-assoc (cdr (assoc 'name project-assoc))))
+                           (project-name (or project-name ""))
+                           (labels-assoc (assoc 'labels issue))
+                           (labels-nodes (and labels-assoc (cdr (assoc 'nodes labels-assoc))))
+                           (labels (if (and labels-nodes (not (eq labels-nodes 'null)))
+                                       (progn
+                                         (when (vectorp labels-nodes)
+                                           (setq labels-nodes (append labels-nodes nil)))
+                                         (mapconcat (lambda (label)
+                                                      (cdr (assoc 'name label)))
+                                                    labels-nodes ", "))
+                                     ""))
+                           (link (format "https://linear.app/issue/%s" identifier)))
 
-                ;; Insert the task with proper format
-                (insert (format "*** %s %s %s\n" todo-state priority title))
-                (insert ":PROPERTIES:\n")
-                (insert (format ":ID:       %s\n" id))
-                (insert (format ":ID-LINEAR: %s\n" identifier))
-                (insert (format ":TEAM: %s\n" team-name))
-                (insert (format ":DESCRIPTION: \"%s\"\n" description))
-                (insert (format ":PRIORITY: %s\n"
-                                (cond ((eq priority-num 1) "Urgent")
-                                      ((eq priority-num 2) "High")
-                                      ((eq priority-num 3) "Medium")
-                                      ((eq priority-num 4) "Low")
-                                      (t "Medium"))))
-                (insert (format ":LABELS: [%s]\n" labels))
-                (insert (format ":PROJECT: %s\n" project-name))
-                (insert (format ":LINK: %s\n" link))
-                (insert ":END:\n")))
+                      ;; Insert the task with proper format
+                      (insert (format "*** %s %s %s\n" todo-state priority title))
+                      (insert ":PROPERTIES:\n")
+                      (insert (format ":ID:       %s\n" id))
+                      (insert (format ":ID-LINEAR: %s\n" identifier))
+                      (insert (format ":TEAM: %s\n" team-name))
+                      (insert (format ":DESCRIPTION: \"%s\"\n" description))
+                      (insert (format ":PRIORITY: %s\n"
+                                      (cond ((eq priority-num 1) "Urgent")
+                                            ((eq priority-num 2) "High")
+                                            ((eq priority-num 3) "Medium")
+                                            ((eq priority-num 4) "Low")
+                                            (t "Medium"))))
+                      (insert (format ":LABELS: [%s]\n" labels))
+                      (insert (format ":PROJECT: %s\n" project-name))
+                      (insert (format ":LINK: %s\n" link))
+                      (insert ":END:\n")))
 
-            ;; Write to file
-            (write-region (point-min) (point-max) org-file-path))
+                  ;; Write to file
+                  (linear--log "Writing %d issues to %s" (length issues) org-file-path)
+                  (make-directory (file-name-directory org-file-path) t) ;; Ensure directory exists
+                  (write-region (point-min) (point-max) org-file-path nil 'quiet))
 
-          ;; Open the org file
-          (find-file org-file-path)
-          (message "Updated Linear issues in %s with %d active issues"
-                   org-file-path (length issues)))
+                ;; Open the org file
+                (find-file org-file-path)
+                (message "Updated Linear issues in %s with %d active issues"
+                         org-file-path (length issues)))
+
+            ;; Handle errors
+            (error (progn
+                     (linear--log "Error updating linear.org: %s" (error-message-string err))
+                     (message "Error updating linear.org: %s" (error-message-string err))))))
+
       (message "No issues found or failed to retrieve issues"))))
 
 ;;;###autoload
