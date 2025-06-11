@@ -449,19 +449,30 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                            (link (format "https://linear.app/issue/%s" identifier)))
 
                       ;; Insert the task with proper format
-                      (insert (format "*** %s %s %s\n" todo-state priority title))
+                      ;; Sanitize title to ensure org compatibility
+                      (let ((sanitized-title (replace-regexp-in-string "\\[\\|\\]" "" title)))
+                        (insert (format "*** %s %s %s\n" todo-state priority sanitized-title)))
                       (insert ":PROPERTIES:\n")
                       (insert (format ":ID:       %s\n" id))
                       (insert (format ":ID-LINEAR: %s\n" identifier))
                       (insert (format ":TEAM: %s\n" team-name))
-                      (insert (format ":DESCRIPTION: \"%s\"\n" description))
+                      ;; Format description properly for multi-line content
+                      (insert ":DESCRIPTION: |\n")
+                      ;; Process description to ensure proper org formatting
+                      (let ((desc-lines (split-string description "\n")))
+                        (dolist (line desc-lines)
+                          (insert (format "  %s\n" (replace-regexp-in-string "\"" "'" line)))))
                       (insert (format ":PRIORITY: %s\n"
                                       (cond ((eq priority-num 1) "Urgent")
                                             ((eq priority-num 2) "High")
                                             ((eq priority-num 3) "Medium")
                                             ((eq priority-num 4) "Low")
                                             (t "Medium"))))
-                      (insert (format ":LABELS: [%s]\n" labels))
+                      ;; Format labels properly
+                      (if (string-empty-p labels)
+                          (insert ":LABELS: []\n")
+                        (insert (format ":LABELS: [%s]\n"
+                                        (replace-regexp-in-string "," ", " labels))))
                       (insert (format ":PROJECT: %s\n" project-name))
                       (insert (format ":LINK: %s\n" link))
                       (insert ":END:\n")))
