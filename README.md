@@ -4,10 +4,12 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 ## Features
 
-- List, view, and create Linear issues
+- List, view, and create Linear issues directly from Emacs
 - Bi-directional synchronization between Linear.app and org-mode
 - Map Linear workflow states to org-mode TODO states
 - Update issue details from either Linear or Emacs
+- Track issue priorities, labels, and assignments
+- Support for issue filtering and organization
 - Automatically sync changes between systems
 
 ## Installation
@@ -16,7 +18,7 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 1. Clone this repository:
    ```
-   git clone https://github.com/anegg0/linear-emacs.git
+   git clone ssh://git@codeberg.org/anegg0/linear-emacs.git
    ```
 
 2. Add the following to your Emacs configuration:
@@ -34,18 +36,13 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 ```elisp
 (use-package linear
-  :straight (:host github :repo "anegg0/linear-emacs")
-  :config
+  :straight (:host github :repo "https://codeberg.org/emacs-weirdware/straight-weirdware.git")
+    :defer nil
   (setq linear-api-key "your-api-key-here"))
 ```
-
 ### Using Doom Emacs
 
 ```elisp
-;; In packages.el
-(package! linear
-  :recipe (:host github :repo "anegg0/linear-emacs" :files ("*.el")))
-
 ;; In config.el
 (use-package linear
   :config
@@ -128,6 +125,7 @@ Map Linear priorities to org priorities:
 - `M-x linear-new-issue` - Create a new issue
 - `M-x linear-test-connection` - Test your Linear API connection
 - `M-x linear-toggle-debug` - Toggle debug mode for troubleshooting
+- `M-x linear-check-setup` - Verify your API key is loaded correctly
 
 ### Org-Mode Integration Commands
 
@@ -174,6 +172,14 @@ Set the synchronization interval (in seconds):
 (setq linear-org-sync-interval 3600) ; Sync every hour
 ```
 
+### Advanced Customization
+
+Configure issue display format:
+```elisp
+;; Customize how issues are displayed in the org file
+(setq linear-org-headline-format "%s %s %s") ; Format: "TODO-STATE PRIORITY TITLE"
+```
+
 ## Troubleshooting
 
 1. Check your connection:
@@ -191,6 +197,12 @@ Set the synchronization interval (in seconds):
    M-x linear-check-setup
    ```
 
+4. Check the `*Messages*` buffer for detailed error information when debug mode is enabled
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
