@@ -645,5 +645,122 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
           (message "Loaded Linear API key from LINEAR_API_KEY environment variable"))
       (message "LINEAR_API_KEY environment variable not found or empty"))))
 
+;;; Functions for updating Linear API from org-mode changes
+
+(defun linear-update-issue-state (issue-id state-name)
+  "Update the state of Linear issue with ISSUE-ID to STATE-NAME."
+  (linear--log "Updating issue %s state to %s" issue-id state-name)
+  (let* ((query "mutation UpdateIssueState($issueId: String!, $stateId: String!) {
+                  issueUpdate(id: $issueId, input: {stateId: $stateId}) {
+                    success
+                    issue {
+                      id
+                      identifier
+                      state {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }")
+         ;; First, we need to get the state ID from the state name
+         (state-id (linear--get-state-id-by-name state-name))
+         (variables `(("issueId" . ,issue-id)
+                      ("stateId" . ,state-id)))
+         (response (linear--graphql-request query variables)))
+    (if response
+        (let ((success (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data response))))))
+          (if success
+              (message "Updated issue %s state to %s" issue-id state-name)
+            (message "Failed to update issue %s state" issue-id)))
+      (message "Failed to update issue %s state: API error" issue-id))))
+
+(defun linear--get-state-id-by-name (state-name)
+  "Get the Linear state ID for the given STATE-NAME."
+  (linear--log "Looking up state ID for %s" state-name)
+  (let* ((query "query {
+                  workflowStates {
+                    nodes {
+                      id
+                      name
+                    }
+                  }
+                }")
+         (response (linear--graphql-request query))
+         (states (and response
+                      (assoc 'data response)
+                      (assoc 'workflowStates (assoc 'data response))
+                      (cdr (assoc 'nodes (assoc 'workflowStates (assoc 'data response))))))
+         (state (and states
+                     (seq-find (lambda (s)
+                                 (string= (downcase (cdr (assoc 'name s)))
+                                          (downcase state-name)))
+                               states))))
+    (if state
+        (cdr (assoc 'id state))
+      (progn
+        (message "Could not find state with name: %s" state-name)
+        nil))))
+
+(defun linear-org-hook-function ()
+  "Hook function to run when linear.org is modified."
+  (when (and buffer-file-name
+             (string-match-p "linear\\.org$" buffer-file-name))
+    (linear--log "linear.org was modified, syncing changes to Linear API")
+    (linear-sync-org-to-linear)))
+
+(defun linear-sync-org-to-linear ()
+  "Sync changes from linear.org to Linear API."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)" nil t)
+      (let ((todo-state (match-string 1))
+            (issue-id nil)
+            (issue-identifier nil))
+        ;; Get issue ID and identifier from properties
+        (save-excursion
+          (forward-line)
+          (when (looking-at ":PROPERTIES:")
+            (forward-line)
+            (while (and (not (looking-at ":END:"))
+                        (not (eobp)))
+              (cond
+               ((looking-at ":ID:\\s-+\\(.+\\)")
+                (setq issue-id (match-string 1)))
+               ((looking-at ":ID-LINEAR:\\s-+\\(.+\\)")
+                (setq issue-identifier (match-string 1))))
+              (forward-line))))
+
+        ;; If we found an issue ID and state, update the Linear API
+        (when (and issue-id issue-identifier)
+          ;; Map org TODO state to Linear state
+          (let ((linear-state (cond
+                               ((string= todo-state "TODO") "Todo")
+                               ((string= todo-state "IN-PROGRESS") "In Progress")
+                               ((string= todo-state "IN-REVIEW") "In Review")
+                               ((string= todo-state "BACKLOG") "Backlog")
+                               ((string= todo-state "BLOCKED") "Blocked")
+                               ((string= todo-state "DONE") "Done")
+                               (t nil))))
+            (when linear-state
+              (linear-update-issue-state issue-id linear-state))))))))
+
+;;;###autoload
+(defun linear-enable-org-sync ()
+  "Enable synchronization between org mode and Linear."
+  (interactive)
+  (add-hook 'after-save-hook #'linear-org-hook-function nil t)
+  (add-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear nil t)
+  (message "Linear-org synchronization enabled"))
+
+;;;###autoload
+(defun linear-disable-org-sync ()
+  "Disable synchronization between org mode and Linear."
+  (interactive)
+  (remove-hook 'after-save-hook #'linear-org-hook-function t)
+  (remove-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear t)
+  (message "Linear-org synchronization disabled"))
+
 (provide 'linear)
 ;;; linear.el ends here
