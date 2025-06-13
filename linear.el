@@ -1,4 +1,3 @@
-
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
@@ -647,9 +646,9 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
 
 ;;; Functions for updating Linear API from org-mode changes
 
-(defun linear-update-issue-state (issue-id state-name)
-  "Update the state of Linear issue with ISSUE-ID to STATE-NAME."
-  (linear--log "Updating issue %s state to %s" issue-id state-name)
+(defun linear-update-issue-state (issue-id state-name team-id)
+  "Update the state of Linear issue with ISSUE-ID to STATE-NAME for TEAM-ID."
+  (linear--log "Updating issue %s state to %s for team %s" issue-id state-name team-id)
   (let* ((query "mutation UpdateIssueState($issueId: String!, $stateId: String!) {
                   issueUpdate(id: $issueId, input: {stateId: $stateId}) {
                     success
@@ -663,34 +662,41 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                     }
                   }
                 }")
-         ;; First, we need to get the state ID from the state name
-         (state-id (linear--get-state-id-by-name state-name))
+         ;; First, we need to get the state ID from the state name and team ID
+         (state-id (linear--get-state-id-by-name state-name team-id))
          (variables `(("issueId" . ,issue-id)
                       ("stateId" . ,state-id)))
          (response (linear--graphql-request query variables)))
     (if response
-        (let ((success (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data response))))))
+        (let ((success (and (assoc 'data response)
+                            (assoc 'issueUpdate (assoc 'data response))
+                            (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data response)))))))
           (if success
               (message "Updated issue %s state to %s" issue-id state-name)
+            (linear--log "Failed to update issue state: %s" (prin1-to-string response))
             (message "Failed to update issue %s state" issue-id)))
       (message "Failed to update issue %s state: API error" issue-id))))
 
-(defun linear--get-state-id-by-name (state-name)
-  "Get the Linear state ID for the given STATE-NAME."
-  (linear--log "Looking up state ID for %s" state-name)
-  (let* ((query "query {
-                  workflowStates {
-                    nodes {
-                      id
-                      name
+(defun linear--get-state-id-by-name (state-name team-id)
+  "Get the Linear state ID for the given STATE-NAME in TEAM-ID."
+  (linear--log "Looking up state ID for %s in team %s" state-name team-id)
+  (let* ((query "query GetTeamWorkflowStates($teamId: String!) {
+                  team(id: $teamId) {
+                    states {
+                      nodes {
+                        id
+                        name
+                      }
                     }
                   }
                 }")
-         (response (linear--graphql-request query))
+         (variables `(("teamId" . ,team-id)))
+         (response (linear--graphql-request query variables))
          (states (and response
                       (assoc 'data response)
-                      (assoc 'workflowStates (assoc 'data response))
-                      (cdr (assoc 'nodes (assoc 'workflowStates (assoc 'data response))))))
+                      (assoc 'team (assoc 'data response))
+                      (assoc 'states (assoc 'team (assoc 'data response)))
+                      (cdr (assoc 'nodes (assoc 'states (assoc 'team (assoc 'data response)))))))
          (state (and states
                      (seq-find (lambda (s)
                                  (string= (downcase (cdr (assoc 'name s)))
@@ -699,7 +705,7 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
     (if state
         (cdr (assoc 'id state))
       (progn
-        (message "Could not find state with name: %s" state-name)
+        (message "Could not find state with name: %s in team %s" state-name team-id)
         nil))))
 
 (defun linear-org-hook-function ()
@@ -717,8 +723,9 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
     (while (re-search-forward "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)" nil t)
       (let ((todo-state (match-string 1))
             (issue-id nil)
-            (issue-identifier nil))
-        ;; Get issue ID and identifier from properties
+            (issue-identifier nil)
+            (team-id nil))
+        ;; Get issue ID, identifier, and team ID from properties
         (save-excursion
           (forward-line)
           (when (looking-at ":PROPERTIES:")
@@ -729,11 +736,16 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                ((looking-at ":ID:\\s-+\\(.+\\)")
                 (setq issue-id (match-string 1)))
                ((looking-at ":ID-LINEAR:\\s-+\\(.+\\)")
-                (setq issue-identifier (match-string 1))))
+                (setq issue-identifier (match-string 1)))
+               ;; Extract team ID from the TEAM property
+               ((looking-at ":TEAM:\\s-+\\(.+\\)")
+                ;; Fetch the actual team ID based on team name
+                (let ((team-name (match-string 1)))
+                  (setq team-id (linear--get-team-id-by-name team-name)))))
               (forward-line))))
 
-        ;; If we found an issue ID and state, update the Linear API
-        (when (and issue-id issue-identifier)
+        ;; If we found an issue ID, state, and team ID, update the Linear API
+        (when (and issue-id issue-identifier team-id)
           ;; Map org TODO state to Linear state
           (let ((linear-state (cond
                                ((string= todo-state "TODO") "Todo")
@@ -744,7 +756,42 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                                ((string= todo-state "DONE") "Done")
                                (t nil))))
             (when linear-state
-              (linear-update-issue-state issue-id linear-state))))))))
+              (linear-update-issue-state issue-id linear-state team-id))))))))
+
+(defun linear--get-team-id-by-name (team-name)
+  "Get the Linear team ID for the given TEAM-NAME."
+  (linear--log "Looking up team ID for team %s" team-name)
+  (let* ((query "query {
+                  teams {
+                    nodes {
+                      id
+                      name
+                    }
+                  }
+                }")
+         (response (linear--graphql-request query))
+         (teams (and response
+                     (assoc 'data response)
+                     (assoc 'teams (assoc 'data response))
+                     (cdr (assoc 'nodes (assoc 'teams (assoc 'data response))))))
+         (team (and teams
+                    (seq-find (lambda (t)
+                                (string= (cdr (assoc 'name t)) team-name))
+                              teams))))
+    (if team
+        (cdr (assoc 'id team))
+      (progn
+        ;; If we couldn't find the team by exact name, cache the team IDs for debugging
+        (when teams
+          (linear--log "Available teams: %s"
+                       (mapconcat (lambda (t)
+                                    (format "%s (%s)"
+                                            (cdr (assoc 'name t))
+                                            (cdr (assoc 'id t))))
+                                  teams
+                                  ", ")))
+        (message "Could not find team with name: %s" team-name)
+        nil)))))
 
 ;;;###autoload
 (defun linear-enable-org-sync ()
