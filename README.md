@@ -43,19 +43,60 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 ### Basic Setup
 
-Set your Linear API key:
+There are several ways to set your Linear API key:
+
+#### Direct Setting (Not Recommended)
 
 ```elisp
 (setq linear-api-key "your-api-key-here")
 ```
 
-You can get your API key from Linear.app under Settings > Account > API > Personal API Keys.
+#### Environment Variable (Better)
 
-Alternatively, set the `LINEAR_API_KEY` environment variable and load it with:
+Set the `LINEAR_API_KEY` environment variable and load it with:
 
 ```elisp
 (linear-load-api-key-from-env)
 ```
+
+#### Using auth-source (Recommended)
+
+For secure credential storage, use Emacs' built-in auth-source package:
+
+```elisp
+(defun my/linear-load-api-key-from-auth-source ()
+  "Load Linear API key from auth-source."
+  (interactive)
+  (require 'auth-source)
+  (let* ((auth-info (auth-source-search :host "api.linear.app" :user "apikey" :max 1))
+         (secret (when auth-info
+                   (funcall (plist-get (car auth-info) :secret)))))
+    (if secret
+        (progn
+          (setq linear-api-key secret)
+          (message "Successfully loaded Linear API key from auth-source"))
+      (message "Failed to retrieve Linear API key from auth-source"))))
+
+;; Call this function when linear loads
+(after! linear
+  (my/linear-load-api-key-from-auth-source))
+```
+
+To set up your auth-source entry:
+
+1. For macOS Keychain users, run:
+   ```
+   security add-generic-password -a apikey -s api.linear.app -w YOUR_API_KEY
+   ```
+
+2. For `~/.authinfo.gpg` users, add this line to your file:
+   ```
+   machine api.linear.app login apikey password YOUR_API_KEY
+   ```
+
+Note: The hostname (`api.linear.app`) and username (`apikey`) in your auth-source entry must match exactly what you're using in the `auth-source-search` function.
+
+You can get your API key from Linear.app under Settings > Account > API > Personal API Keys.
 
 Optionally, set a default team ID to streamline issue creation:
 
