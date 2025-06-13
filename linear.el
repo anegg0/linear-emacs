@@ -1,3 +1,4 @@
+
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
@@ -791,7 +792,7 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                                   teams
                                   ", ")))
         (message "Could not find team with name: %s" team-name)
-        nil)))))
+        nil))))
 
 ;;;###autoload
 (defun linear-enable-org-sync ()
