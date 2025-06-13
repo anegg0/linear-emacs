@@ -32,21 +32,11 @@ This package provides integration between Emacs and Linear.app, allowing you to 
    - dash.el
    - s.el
 
-### Using use-package and straight.el
-
-```elisp
-(use-package linear
-  :straight (:host github :repo "https://codeberg.org/emacs-weirdware/straight-weirdware.git")
-    :defer nil
-  (setq linear-api-key "your-api-key-here"))
-```
 ### Using Doom Emacs
 
 ```elisp
-;; In config.el
-(use-package linear
-  :config
-  (setq linear-api-key "your-api-key-here"))
+(package! linear
+  :recipe (:host github :repo "anegg0/linear-emacs" :files ("*.el")))
 ```
 
 ## Configuration
@@ -75,34 +65,69 @@ Optionally, set a default team ID to streamline issue creation:
 
 ### Org-Mode Integration
 
-To enable bidirectional synchronization with org-mode:
+To enable bidirectional synchronization with org-mode in Doom Emacs:
 
 ```elisp
-(require 'linear-org)
-(setq linear-org-file (expand-file-name "linear.org" org-directory))
+;; In your config.el
+(after! linear
+  (linear-load-api-key-from-env)
+  
+  ;; Automatically enable two-way sync when linear.org is opened
+  (defun my/enable-linear-org-sync ()
+    "Enable Linear-org synchronization when linear.org is opened."
+    (when (and buffer-file-name
+               (string-match-p "linear\\.org$" buffer-file-name))
+      (when (fboundp 'linear-enable-org-sync)
+        (linear-enable-org-sync)
+        (message "Linear-org synchronization enabled for this buffer"))))
+  
+  ;; Add hook to auto-enable sync when linear.org is opened
+  (add-hook 'find-file-hook #'my/enable-linear-org-sync)
+  
+  ;; Enable sync for org-after-todo-state-change-hook
+  (add-hook 'org-after-todo-state-change-hook
+            (lambda ()
+              (when (and buffer-file-name
+                         (string-match-p "linear\\.org$" buffer-file-name)
+                         (fboundp 'linear-sync-org-to-linear))
+                (linear-sync-org-to-linear)))))
 ```
 
-To customize the mapping between Linear states and org TODO keywords:
+When you run `M-x linear-list-issues`, the package will create a `linear.org` file in your org-directory with all your assigned issues. The default location is:
 
 ```elisp
-(setq linear-org-state-mapping
-      '(("Todo" . "TODO")
-        ("In Progress" . "IN-PROGRESS")
-        ("In Review" . "IN-REVIEW")
-        ("Backlog" . "BACKLOG")
-        ("Blocked" . "BLOCKED")
-        ("Done" . "DONE")
-        ("Canceled" . "CANCELED")
-        ("Duplicate" . "DUPLICATE")))
+(expand-file-name "gtd/linear.org" org-directory)
 ```
 
-Set up the matching TODO keywords in your linear.org file:
+You can customize this location in the `linear-list-issues` function if needed.
+
+The org file will have the following structure:
 
 ```org
-#+TITLE: Linear Tasks
-#+FILETAGS: :linear:
-#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE CANCELED DUPLICATE
+:PROPERTIES:
+:ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae
+#+title: Linear issues assigned to me
+#+TAGS: :
+#+filetags: :twai:b:
+#+STARTUP: overview
+#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE
+:END:
+
+*** TODO [#B] Issue Title
+:PROPERTIES:
+:ID:       issue-unique-id
+:ID-LINEAR: TEAM-123
+:TEAM: Team Name
+:DESCRIPTION: |
+  Issue description goes here
+:PRIORITY: High
+:LABELS: [label1, label2]
+:PROJECT: Project Name
+:LINK: https://linear.app/issue/TEAM-123
+:END:
 ```
+
+When you change the TODO state of an issue in the org file, it will automatically synchronize with Linear.
 
 ### Priority Mapping
 
@@ -129,12 +154,17 @@ Map Linear priorities to org priorities:
 
 ### Org-Mode Integration Commands
 
-- `M-x linear-org-sync-from-linear` - Pull issues from Linear into org-mode
-- `M-x linear-org-sync-to-linear` - Push current org entry to Linear
-- `M-x linear-org-capture-to-linear` - Create a new Linear issue from org capture
-- `M-x linear-org-open-issue` - Open the current issue in your browser
-- `M-x linear-org-start-auto-sync` - Start automatic synchronization
-- `M-x linear-org-stop-auto-sync` - Stop automatic synchronization
+- `M-x linear-list-issues` - Pull issues from Linear into org-mode
+- `M-x linear-sync-org-to-linear` - Sync the current org entry to Linear
+- `M-x linear-enable-org-sync` - Enable automatic synchronization
+- `M-x linear-disable-org-sync` - Disable automatic synchronization
+
+#### Improved Synchronization Commands
+
+The following commands are available in the optimized configuration:
+
+- `M-x my/linear-sync-single-issue-at-point` - Sync only the current issue at point
+- `M-x my/toggle-linear-auto-sync` - Toggle automatic syncing before showing todo list
 
 ### Recommended Keybindings
 
@@ -142,20 +172,57 @@ For Doom Emacs, you can set up convenient keybindings:
 
 ```elisp
 (map! :leader
-      (:prefix ("L" . "Linear")
-       :desc "List issues" "l" #'linear-list-issues
+      (:prefix ("l" . "Linear")
+       :desc "Sync all Linear issues" "s" #'linear-list-issues
        :desc "New issue" "n" #'linear-new-issue
-       :desc "Sync from Linear" "s" #'linear-org-sync-from-linear
-       :desc "Test connection" "t" #'linear-test-connection
+       :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync
+       :desc "Test connection" "c" #'linear-test-connection
        :desc "Toggle debug" "d" #'linear-toggle-debug))
+```
 
-(map! :map org-mode-map
-      :localleader
-      (:prefix ("L" . "Linear")
-       :desc "Sync from Linear" "s" #'linear-org-sync-from-linear
-       :desc "Sync to Linear" "p" #'linear-org-sync-to-linear
-       :desc "Capture to Linear" "c" #'linear-org-capture-to-linear
-       :desc "Open in browser" "o" #'linear-org-open-issue))
+In the optimized configuration, these keybindings are already set up for you:
+
+```elisp
+(map! :leader
+      :prefix "l"
+      :desc "Sync all Linear issues" "s" #'linear-list-issues
+      :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync)
+```
+
+## Performance Optimization
+
+To avoid synchronization performance issues, the optimized configuration:
+
+1. Only synchronizes the current issue at point instead of all issues
+2. Makes automatic synchronization optional with a toggle
+3. Adds convenient keybindings for managing synchronization
+
+```elisp
+;; In your config.el
+(after! linear
+  ;; Improved synchronization function that only updates the changed issue
+  (defun my/linear-sync-single-issue-at-point ()
+    "Sync only the current issue at point to Linear API."
+    (interactive)
+    (save-excursion
+      ;; Move to the beginning of the current heading
+      (org-back-to-heading t)
+      ;; Check if this is a Linear issue heading
+      (when (looking-at "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)")
+        ;; [Implementation details omitted for brevity]
+        )))
+
+  ;; Override linear-sync-org-to-linear to only sync the current issue
+  (defun linear-sync-org-to-linear ()
+    "Sync only the current issue to Linear API."
+    (interactive)
+    (my/linear-sync-single-issue-at-point))
+
+  ;; Add convenient keybinding for manually syncing all issues
+  (map! :leader
+        :prefix "l"
+        :desc "Sync all Linear issues" "s" #'linear-list-issues
+        :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync))
 ```
 
 ## Customization
@@ -164,20 +231,6 @@ Enable debug logging to troubleshoot issues:
 
 ```elisp
 (setq linear-debug t)
-```
-
-Set the synchronization interval (in seconds):
-
-```elisp
-(setq linear-org-sync-interval 3600) ; Sync every hour
-```
-
-### Advanced Customization
-
-Configure issue display format:
-```elisp
-;; Customize how issues are displayed in the org file
-(setq linear-org-headline-format "%s %s %s") ; Format: "TODO-STATE PRIORITY TITLE"
 ```
 
 ## Troubleshooting
