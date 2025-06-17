@@ -18,7 +18,7 @@ This package provides integration between Emacs and Linear.app, allowing you to 
 
 1. Clone this repository:
    ```
-   git clone ssh://git@codeberg.org/anegg0/linear-emacs.git
+   git clone git@github.com:anegg0/linear-emacs.git
    ```
 
 2. Add the following to your Emacs configuration:
