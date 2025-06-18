@@ -1,7 +1,7 @@
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
-;; Author:
+;; Author: Gael Blanchemain
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1") (request "0.3.0") (dash "2.17.0") (s "1.12.0"))
 ;; Keywords: tools
@@ -10,7 +10,17 @@
 ;; This file is not part of GNU Emacs.
 
 ;; This program is free software; you can redistribute it and/or modify
-;; it under the terms of the MIT License.
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -454,7 +464,7 @@ ERROR-FN is a function to call on error."
   (linear--log "Variables: %s" (prin1-to-string variables))
 
   (let ((request-data (json-encode `(("query" . ,query)
-                                    ("variables" . ,variables)))))
+                                     ("variables" . ,variables)))))
     (linear--log "Async request payload: %s" request-data)
 
     (request
@@ -507,8 +517,8 @@ This function updates the UI immediately and performs the API update in the back
     ;; Define success handler
     (let ((success-handler (lambda (data)
                              (let ((success (and (assoc 'data data)
-                                                (assoc 'issueUpdate (assoc 'data data))
-                                                (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data data)))))))
+                                                 (assoc 'issueUpdate (assoc 'data data))
+                                                 (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data data)))))))
                                (if success
                                    (message "Successfully updated issue %s state to %s" issue-id state-name)
                                  (linear--log "Failed to update issue state asynchronously: %s" (prin1-to-string data))
