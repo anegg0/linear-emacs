@@ -678,6 +678,60 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
             (message "Failed to update issue %s state" issue-id)))
       (message "Failed to update issue %s state: API error" issue-id))))
 
+(defun linear--update-issue-state-async (issue-id state-name team-id)
+  "Asynchronously update the state of Linear issue with ISSUE-ID to STATE-NAME for TEAM-ID.
+This function updates the UI immediately and performs the API update in the background."
+  (linear--log "Asynchronously updating issue %s state to %s for team %s" issue-id state-name team-id)
+  
+  ;; Show immediate feedback to the user
+  (message "Updating issue state to %s... (in background)" state-name)
+  
+  ;; Run the API update asynchronously
+  (let* ((query "mutation UpdateIssueState($issueId: String!, $stateId: String!) {
+                  issueUpdate(id: $issueId, input: {stateId: $stateId}) {
+                    success
+                    issue {
+                      id
+                      identifier
+                      state {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }")
+         ;; First, we need to get the state ID from the state name and team ID
+         (state-id (linear--get-state-id-by-name state-name team-id))
+         (variables `(("issueId" . ,issue-id)
+                      ("stateId" . ,state-id)))
+         (request-data (json-encode `(("query" . ,query)
+                                      ("variables" . ,variables)))))
+    
+    ;; Make async GraphQL request
+    (request
+     linear-graphql-url
+     :type "POST"
+     :headers (linear--headers)
+     :data request-data
+     :parser 'json-read
+     :success (cl-function
+               (lambda (&key data &allow-other-keys)
+                 (linear--log "Async response received: %s" (prin1-to-string data))
+                 (let ((success (and (assoc 'data data)
+                                     (assoc 'issueUpdate (assoc 'data data))
+                                     (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data data)))))))
+                   (if success
+                       (message "Successfully updated issue %s state to %s" issue-id state-name)
+                     (linear--log "Failed to update issue state asynchronously: %s" (prin1-to-string data))
+                     (message "Failed to update issue %s state in Linear" issue-id)))))
+     :error (cl-function
+             (lambda (&key error-thrown response data &allow-other-keys)
+               (linear--log "Async error: %s" error-thrown)
+               (linear--log "Async response status: %s" (request-response-status-code response))
+               (when data
+                 (linear--log "Async error response: %s" (prin1-to-string data)))
+               (message "Error updating issue %s state in Linear" issue-id))))))
+
 (defun linear--get-state-id-by-name (state-name team-id)
   "Get the Linear state ID for the given STATE-NAME in TEAM-ID."
   (linear--log "Looking up state ID for %s in team %s" state-name team-id)
@@ -719,9 +773,58 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
 (defun linear-sync-org-to-linear ()
   "Sync changes from linear.org to Linear API."
   (interactive)
+  ;; If called from org-after-todo-state-change-hook, just process the current heading
+  (if (eq this-command 'org-todo)
+      (linear-sync-current-heading-to-linear)
+    ;; Otherwise, scan the entire file
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)" nil t)
+        (let ((todo-state (match-string 1))
+              (issue-id nil)
+              (issue-identifier nil)
+              (team-id nil))
+          ;; Get issue ID, identifier, and team ID from properties
+          (save-excursion
+            (forward-line)
+            (when (looking-at ":PROPERTIES:")
+              (forward-line)
+              (while (and (not (looking-at ":END:"))
+                          (not (eobp)))
+                (cond
+                 ((looking-at ":ID:\\s-+\\(.+\\)")
+                  (setq issue-id (match-string 1)))
+                 ((looking-at ":ID-LINEAR:\\s-+\\(.+\\)")
+                  (setq issue-identifier (match-string 1)))
+                 ;; Extract team ID from the TEAM property
+                 ((looking-at ":TEAM:\\s-+\\(.+\\)")
+                  ;; Fetch the actual team ID based on team name
+                  (let ((team-name (match-string 1)))
+                    (setq team-id (linear--get-team-id-by-name team-name)))))
+                (forward-line))))
+
+          ;; If we found an issue ID, state, and team ID, update the Linear API
+          (when (and issue-id issue-identifier team-id)
+            ;; Map org TODO state to Linear state
+            (let ((linear-state (cond
+                                 ((string= todo-state "TODO") "Todo")
+                                 ((string= todo-state "IN-PROGRESS") "In Progress")
+                                 ((string= todo-state "IN-REVIEW") "In Review")
+                                 ((string= todo-state "BACKLOG") "Backlog")
+                                 ((string= todo-state "BLOCKED") "Blocked")
+                                 ((string= todo-state "DONE") "Done")
+                                 (t nil))))
+              (when linear-state
+                ;; Use async request to update Linear API in the background
+                (linear--update-issue-state-async issue-id linear-state team-id)))))))))
+
+(defun linear-sync-current-heading-to-linear ()
+  "Sync the current org heading's TODO state to Linear API.
+Used when directly changing a TODO state in the org buffer."
   (save-excursion
-    (goto-char (point-min))
-    (while (re-search-forward "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)" nil t)
+    ;; Move to the beginning of the current heading
+    (org-back-to-heading t)
+    (when (looking-at "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)")
       (let ((todo-state (match-string 1))
             (issue-id nil)
             (issue-identifier nil)
@@ -757,7 +860,8 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
                                ((string= todo-state "DONE") "Done")
                                (t nil))))
             (when linear-state
-              (linear-update-issue-state issue-id linear-state team-id))))))))
+              ;; Use async request to update Linear API in the background
+              (linear--update-issue-state-async issue-id linear-state team-id)))))))
 
 (defun linear--get-team-id-by-name (team-name)
   "Get the Linear team ID for the given TEAM-NAME."
