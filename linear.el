@@ -1,4 +1,3 @@
-
 ;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
@@ -709,28 +708,28 @@ This function updates the UI immediately and performs the API update in the back
     
     ;; Make async GraphQL request
     (request
-     linear-graphql-url
-     :type "POST"
-     :headers (linear--headers)
-     :data request-data
-     :parser 'json-read
-     :success (cl-function
-               (lambda (&key data &allow-other-keys)
-                 (linear--log "Async response received: %s" (prin1-to-string data))
-                 (let ((success (and (assoc 'data data)
-                                     (assoc 'issueUpdate (assoc 'data data))
-                                     (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data data)))))))
-                   (if success
-                       (message "Successfully updated issue %s state to %s" issue-id state-name)
-                     (linear--log "Failed to update issue state asynchronously: %s" (prin1-to-string data))
-                     (message "Failed to update issue %s state in Linear" issue-id)))))
-     :error (cl-function
-             (lambda (&key error-thrown response data &allow-other-keys)
-               (linear--log "Async error: %s" error-thrown)
-               (linear--log "Async response status: %s" (request-response-status-code response))
-               (when data
-                 (linear--log "Async error response: %s" (prin1-to-string data)))
-               (message "Error updating issue %s state in Linear" issue-id))))))
+      linear-graphql-url
+      :type "POST"
+      :headers (linear--headers)
+      :data request-data
+      :parser 'json-read
+      :success (cl-function
+                (lambda (&key data &allow-other-keys)
+                  (linear--log "Async response received: %s" (prin1-to-string data))
+                  (let ((success (and (assoc 'data data)
+                                      (assoc 'issueUpdate (assoc 'data data))
+                                      (cdr (assoc 'success (assoc 'issueUpdate (assoc 'data data)))))))
+                    (if success
+                        (message "Successfully updated issue %s state to %s" issue-id state-name)
+                      (linear--log "Failed to update issue state asynchronously: %s" (prin1-to-string data))
+                      (message "Failed to update issue %s state in Linear" issue-id)))))
+      :error (cl-function
+              (lambda (&key error-thrown response data &allow-other-keys)
+                (linear--log "Async error: %s" error-thrown)
+                (linear--log "Async response status: %s" (request-response-status-code response))
+                (when data
+                  (linear--log "Async error response: %s" (prin1-to-string data)))
+                (message "Error updating issue %s state in Linear" issue-id))))))
 
 (defun linear--get-state-id-by-name (state-name team-id)
   "Get the Linear state ID for the given STATE-NAME in TEAM-ID."
@@ -863,10 +862,10 @@ Used when directly changing a TODO state in the org buffer."
               ;; Use async request to update Linear API in the background
               (linear--update-issue-state-async issue-id linear-state team-id)))))))
 
-(defun linear--get-team-id-by-name (team-name)
-  "Get the Linear team ID for the given TEAM-NAME."
-  (linear--log "Looking up team ID for team %s" team-name)
-  (let* ((query "query {
+  (defun linear--get-team-id-by-name (team-name)
+    "Get the Linear team ID for the given TEAM-NAME."
+    (linear--log "Looking up team ID for team %s" team-name)
+    (let* ((query "query {
                   teams {
                     nodes {
                       id
@@ -874,45 +873,45 @@ Used when directly changing a TODO state in the org buffer."
                     }
                   }
                 }")
-         (response (linear--graphql-request query))
-         (teams (and response
-                     (assoc 'data response)
-                     (assoc 'teams (assoc 'data response))
-                     (cdr (assoc 'nodes (assoc 'teams (assoc 'data response))))))
-         (team (and teams
-                    (seq-find (lambda (t)
-                                (string= (cdr (assoc 'name t)) team-name))
-                              teams))))
-    (if team
-        (cdr (assoc 'id team))
-      (progn
-        ;; If we couldn't find the team by exact name, cache the team IDs for debugging
-        (when teams
-          (linear--log "Available teams: %s"
-                       (mapconcat (lambda (t)
-                                    (format "%s (%s)"
-                                            (cdr (assoc 'name t))
-                                            (cdr (assoc 'id t))))
-                                  teams
-                                  ", ")))
-        (message "Could not find team with name: %s" team-name)
-        nil))))
+           (response (linear--graphql-request query))
+           (teams (and response
+                       (assoc 'data response)
+                       (assoc 'teams (assoc 'data response))
+                       (cdr (assoc 'nodes (assoc 'teams (assoc 'data response))))))
+           (team (and teams
+                      (seq-find (lambda (t)
+                                  (string= (cdr (assoc 'name t)) team-name))
+                                teams))))
+      (if team
+          (cdr (assoc 'id team))
+        (progn
+          ;; If we couldn't find the team by exact name, cache the team IDs for debugging
+          (when teams
+            (linear--log "Available teams: %s"
+                         (mapconcat (lambda (t)
+                                      (format "%s (%s)"
+                                              (cdr (assoc 'name t))
+                                              (cdr (assoc 'id t))))
+                                    teams
+                                    ", ")))
+          (message "Could not find team with name: %s" team-name)
+          nil))))
 
 ;;;###autoload
-(defun linear-enable-org-sync ()
-  "Enable synchronization between org mode and Linear."
-  (interactive)
-  (add-hook 'after-save-hook #'linear-org-hook-function nil t)
-  (add-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear nil t)
-  (message "Linear-org synchronization enabled"))
+  (defun linear-enable-org-sync ()
+    "Enable synchronization between org mode and Linear."
+    (interactive)
+    (add-hook 'after-save-hook #'linear-org-hook-function nil t)
+    (add-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear nil t)
+    (message "Linear-org synchronization enabled"))
 
 ;;;###autoload
-(defun linear-disable-org-sync ()
-  "Disable synchronization between org mode and Linear."
-  (interactive)
-  (remove-hook 'after-save-hook #'linear-org-hook-function t)
-  (remove-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear t)
-  (message "Linear-org synchronization disabled"))
+  (defun linear-disable-org-sync ()
+    "Disable synchronization between org mode and Linear."
+    (interactive)
+    (remove-hook 'after-save-hook #'linear-org-hook-function t)
+    (remove-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear t)
+    (message "Linear-org synchronization disabled"))
 
-(provide 'linear)
+  (provide 'linear)
 ;;; linear.el ends here
