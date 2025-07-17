@@ -110,6 +110,18 @@ Optionally, set a default team ID to streamline issue creation:
 (setq linear-default-team-id "your-team-id")
 ```
 
+### Customizing the Output Path
+
+By default, Linear issues are saved to `gtd/linear.org` in your `org-directory`. You can customize this location:
+
+```elisp
+;; Change the output file location
+(setq linear-org-file-path "/path/to/your/linear-issues.org")
+
+;; Or use a different subdirectory in your org-directory
+(setq linear-org-file-path (expand-file-name "projects/linear.org" org-directory))
+```
+
 ### Org-Mode Integration
 
 To enable bidirectional synchronization with org-mode in Doom Emacs:
@@ -140,13 +152,7 @@ To enable bidirectional synchronization with org-mode in Doom Emacs:
                 (linear-sync-org-to-linear)))))
 ```
 
-When you run `M-x linear-list-issues`, the package will create a `linear.org` file in your org-directory with all your assigned issues. The default location is:
-
-```elisp
-(expand-file-name "gtd/linear.org" org-directory)
-```
-
-You can customize this location in the `linear-list-issues` function if needed.
+When you run `M-x linear-list-issues`, the package will create a file with all your assigned issues at the location specified by `linear-org-file-path` (see "Customizing the Output Path" above).
 
 The org file will have the following structure:
 

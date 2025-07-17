@@ -81,6 +81,13 @@ logged to the *Messages* buffer."
   :type 'boolean
   :group 'linear)
 
+(defcustom linear-org-file-path (expand-file-name "gtd/linear.org" org-directory)
+  "Path to the org file where Linear issues are stored.
+This file will be created/updated when running `linear-list-issues'.
+Defaults to 'gtd/linear.org' in your `org-directory'."
+  :type 'file
+  :group 'linear)
+
 ;; Cache variables
 (defvar linear--cache-issues nil
   "Cache for issues.")
@@ -773,7 +780,7 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
   (interactive)
   (linear--log "Executing linear-list-issues")
   (let* ((issues (linear-get-issues))
-         (org-file-path (expand-file-name "~/Library/CloudStorage/ProtonDrive-gael.blanchemain@protonmail.com-folder/orgmode/gtd/linear.org"))
+         (org-file-path linear-org-file-path)
          ;; Define the list of statuses to include (case insensitive)
          (include-statuses '("todo" "in progress" "in review" "backlog" "blocked")))
     (linear--log "Retrieved %d total issues before filtering" (length issues))
