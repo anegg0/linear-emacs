@@ -1,6 +1,7 @@
 # Linear.app for Emacs
 
 This package provides integration between Emacs and Linear.app, allowing you to view and manage your Linear issues without leaving Emacs.
+I was just sick of leaving Emacs for the uncomfortable world of some corporation's UI. I hope this simple integration helps you, too. 
 
 ## Features
 
