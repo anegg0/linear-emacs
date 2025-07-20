@@ -1023,5 +1023,5 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
   (remove-hook 'org-after-todo-state-change-hook #'linear-sync-org-to-linear t)
   (message "Linear-org synchronization disabled"))
 
-(provide 'linear)
+(provide 'linear-emacs)
 ;;; linear-emacs.el ends here
