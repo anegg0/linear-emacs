@@ -31,7 +31,7 @@ git clone ssh://git@codeberg.org/anegg0/linear-emacs.git
 2. Add the following to your Emacs configuration:
    ```elisp
    (add-to-list 'load-path "/path/to/linear-emacs")
-   (require 'linear)
+   (require 'linear-emacs)
    ```
 
 3. Install the required dependencies:
