@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2025
 ;; Author: Gael Blanchemain
-;; Version: 0.1.0
+;; Version: 1.0.0
 ;; Package-Requires: ((emacs "27.1") (request "0.3.0") (dash "2.17.0") (s "1.12.0"))
 ;; Keywords: tools
 ;; URL: https://github.com/anegg0/linear-emacs
