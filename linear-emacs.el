@@ -1,4 +1,4 @@
-;;; linear.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
+;;; linear-emacs.el --- Linear.app integration for Emacs -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025
 ;; Author: Gael Blanchemain
@@ -24,7 +24,7 @@
 
 ;;; Commentary:
 
-;; linear.el provides an interface to Linear.app issue tracking from Emacs.
+;; linear-emacs.el provides an interface to Linear.app issue tracking from Emacs.
 ;; It allows you to view, create, and update issues without leaving your editor.
 
 ;;; Code:
@@ -1024,4 +1024,4 @@ Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCK
   (message "Linear-org synchronization disabled"))
 
 (provide 'linear)
-;;; linear.el ends here
+;;; linear-emacs.el ends here
