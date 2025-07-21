@@ -83,9 +83,9 @@ logged to the *Messages* buffer."
   :group 'linear-emacs)
 
 (defcustom linear-emacs-org-file-path (expand-file-name "gtd/linear.org" org-directory)
-  `Path to the org file where Linear issues are stored.
-  This file will be created/updated when running `linear-emacs-list-issues'.
-  Defaults to 'gtd/linear.org' in your `org-directory'."
+  "Path to the org file where Linear issues are stored.
+  This file will be created/updated when running `linear-emacs-list-issues\\='.
+  Defaults to \\='gtd/linear.org\\=' in your `org-directory\\='."
   :type 'file
   :group 'linear-emacs)
 
@@ -619,8 +619,8 @@ logged to the *Messages* buffer."
           :team-id team-id)))
 
 (defun linear-emacs--map-org-state-to-linear (todo-state)
-  "Map 'org-mode' TODO state to Linear state name.
-  TODO-STATE is the 'org-mode' state string."
+  "Map \='org-mode\=' TODO state to Linear state name.
+  TODO-STATE is the \='org-mode\=' state string."
   (cond
    ((string= todo-state "TODO") "Todo")
    ((string= todo-state "IN-PROGRESS") "In Progress")
@@ -670,7 +670,7 @@ logged to the *Messages* buffer."
 ;;; Mapping Functions
 
 (defun linear-emacs--map-linear-state-to-org (state)
-  "Map Linear state name to 'org-mode' TODO state string.
+  "Map Linear state name to \='org-mode\=' TODO state string.
   STATE is the Linear state string."
   (cond
    ((string-equal state "Done") "DONE")
@@ -682,7 +682,7 @@ logged to the *Messages* buffer."
    (t "TODO")))
 
 (defun linear-emacs--map-linear-priority-to-org (priority-num)
-  "Convert Linear priority number to 'org-mode' priority string.
+  "Convert Linear priority number to \='org-mode\=' priority string.
   PRIORITY-NUM is the Linear priority number (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low)."
   (cond
    ((eq priority-num 1) "[#A]") ; Urgent -> A
@@ -702,7 +702,7 @@ logged to the *Messages* buffer."
    (t "Medium")))
 
 (defun linear-emacs--format-issue-as-org-entry (issue)
-  "Format a Linear ISSUE as an 'org-mode' entry."
+  "Format a Linear ISSUE as an \='org-mode\=' entry."
   (let* ((id (cdr (assoc 'id issue)))
          (identifier (cdr (assoc 'identifier issue)))
          (title (cdr (assoc 'title issue)))
