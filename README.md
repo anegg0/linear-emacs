@@ -1,7 +1,7 @@
 # Linear.app for Emacs
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/anegg0/linear-emacs/releases)
+[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://codeberg.org/gyamtso/linear-emacs/releases)
 
 This package provides integration between Emacs and Linear.app, allowing you to view and manage your Linear issues without leaving Emacs.
 I was just sick of leaving Emacs for the uncomfortable world of some corporation's UI. I hope this simple integration helps you, too. 
@@ -67,7 +67,7 @@ git clone https://github.com/anegg0/linear-emacs.git
 
 ```elisp
 (package! linear-emacs
-  :recipe (:host github :repo "anegg0/linear-emacs" :files ("*.el")))
+  :recipe (:host codeberg :repo "gyamtso/linear-emacs" :files ("*.el")))
 ```
 
 ## Configuration
