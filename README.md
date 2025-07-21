@@ -41,6 +41,12 @@ M-x package-install RET linear-emacs RET
 1. Clone this repository:
 
 ```shell
+git clone ssh://git@codeberg.org/gyamtso/linear-emacs.git
+```
+
+or, if you really have to:
+
+```shell
 git clone https://github.com/anegg0/linear-emacs.git
 ```
 
