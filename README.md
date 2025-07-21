@@ -1,5 +1,8 @@
 # Linear.app for Emacs
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/anegg0/linear-emacs/releases)
+
 This package provides integration between Emacs and Linear.app, allowing you to view and manage your Linear issues without leaving Emacs.
 I was just sick of leaving Emacs for the uncomfortable world of some corporation's UI. I hope this simple integration helps you, too. 
 
@@ -15,17 +18,30 @@ I was just sick of leaving Emacs for the uncomfortable world of some corporation
 
 ## Installation
 
+### Prerequisites
+
+Ensure you have MELPA configured in your Emacs:
+
+```elisp
+(require 'package)
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+(package-initialize)
+```
+
+### MELPA Installation (Coming Soon)
+
+Once accepted to MELPA, you'll be able to install with:
+
+```elisp
+M-x package-install RET linear-emacs RET
+```
+
 ### Manual Installation
 
 1. Clone this repository:
 
 ```shell
-git clone git@github.com:anegg0/linear-emacs.git
-```
-Or
-
-```shell
-git clone ssh://git@codeberg.org/anegg0/linear-emacs.git
+git clone https://github.com/anegg0/linear-emacs.git
 ```
 
 2. Add the following to your Emacs configuration:
@@ -35,14 +51,16 @@ git clone ssh://git@codeberg.org/anegg0/linear-emacs.git
    ```
 
 3. Install the required dependencies:
-   - request.el
-   - dash.el
-   - s.el
+   ```elisp
+   M-x package-install RET request RET
+   M-x package-install RET dash RET
+   M-x package-install RET s RET
+   ```
 
 ### Using Doom Emacs
 
 ```elisp
-(package! linear
+(package! linear-emacs
   :recipe (:host github :repo "anegg0/linear-emacs" :files ("*.el")))
 ```
 
@@ -55,7 +73,7 @@ There are several ways to set your Linear API key:
 #### Direct Setting (Not Recommended)
 
 ```elisp
-(setq linear-api-key "your-api-key-here")
+(setq linear-emacs-api-key "your-api-key-here")
 ```
 
 #### Environment Variable (Better)
@@ -63,7 +81,7 @@ There are several ways to set your Linear API key:
 Set the `LINEAR_API_KEY` environment variable and load it with:
 
 ```elisp
-(linear-load-api-key-from-env)
+(linear-emacs-load-api-key-from-env)
 ```
 
 #### Using auth-source (Recommended)
@@ -80,12 +98,12 @@ For secure credential storage, use Emacs' built-in auth-source package:
                    (funcall (plist-get (car auth-info) :secret)))))
     (if secret
         (progn
-          (setq linear-api-key secret)
+          (setq linear-emacs-api-key secret)
           (message "Successfully loaded Linear API key from auth-source"))
       (message "Failed to retrieve Linear API key from auth-source"))))
 
 ;; Call this function when linear loads
-(after! linear
+(after! linear-emacs
   (my/linear-load-api-key-from-auth-source))
 ```
 
@@ -108,7 +126,7 @@ You can get your API key from Linear.app under Settings > Account > API > Person
 Optionally, set a default team ID to streamline issue creation:
 
 ```elisp
-(setq linear-default-team-id "your-team-id")
+(setq linear-emacs-default-team-id "your-team-id")
 ```
 
 ### Customizing the Output Path
@@ -117,10 +135,10 @@ By default, Linear issues are saved to `gtd/linear.org` in your `org-directory`.
 
 ```elisp
 ;; Change the output file location
-(setq linear-org-file-path "/path/to/your/linear-issues.org")
+(setq linear-emacs-org-file-path "/path/to/your/linear-issues.org")
 
 ;; Or use a different subdirectory in your org-directory
-(setq linear-org-file-path (expand-file-name "projects/linear.org" org-directory))
+(setq linear-emacs-org-file-path (expand-file-name "projects/linear.org" org-directory))
 ```
 
 ### Org-Mode Integration
@@ -129,8 +147,8 @@ To enable bidirectional synchronization with org-mode in Doom Emacs:
 
 ```elisp
 ;; In your config.el
-(after! linear
-  (linear-load-api-key-from-env)
+(after! linear-emacs
+  (linear-emacs-load-api-key-from-env)
   
   ;; Automatically enable two-way sync when linear.org is opened
   (defun my/enable-linear-org-sync ()
@@ -138,7 +156,7 @@ To enable bidirectional synchronization with org-mode in Doom Emacs:
     (when (and buffer-file-name
                (string-match-p "linear\\.org$" buffer-file-name))
       (when (fboundp 'linear-enable-org-sync)
-        (linear-enable-org-sync)
+        (linear-emacs-enable-org-sync)
         (message "Linear-org synchronization enabled for this buffer"))))
   
   ;; Add hook to auto-enable sync when linear.org is opened
@@ -149,11 +167,11 @@ To enable bidirectional synchronization with org-mode in Doom Emacs:
             (lambda ()
               (when (and buffer-file-name
                          (string-match-p "linear\\.org$" buffer-file-name)
-                         (fboundp 'linear-sync-org-to-linear))
-                (linear-sync-org-to-linear)))))
+                         (fboundp 'linear-emacs-sync-org-to-linear))
+                (linear-emacs-sync-org-to-linear)))))
 ```
 
-When you run `M-x linear-list-issues`, the package will create a file with all your assigned issues at the location specified by `linear-org-file-path` (see "Customizing the Output Path" above).
+When you run `M-x linear-emacs-list-issues`, the package will create a file with all your assigned issues at the location specified by `linear-org-file-path` (see "Customizing the Output Path" above).
 
 The org file will have the following structure:
 
@@ -188,7 +206,7 @@ When you change the TODO state of an issue in the org file, it will automaticall
 Map Linear priorities to org priorities:
 
 ```elisp
-(setq linear-org-priority-mapping
+(setq linear-emacs-org-priority-mapping
       '((0 . nil)   ; No priority
         (1 . "A")   ; Urgent
         (2 . "B")   ; High
@@ -200,18 +218,18 @@ Map Linear priorities to org priorities:
 
 ### Commands
 
-- `M-x linear-list-issues` - Display your assigned issues
-- `M-x linear-new-issue` - Create a new issue
-- `M-x linear-test-connection` - Test your Linear API connection
-- `M-x linear-toggle-debug` - Toggle debug mode for troubleshooting
-- `M-x linear-check-setup` - Verify your API key is loaded correctly
+- `M-x linear-emacs-list-issues` - Display your assigned issues
+- `M-x linear-emacs-new-issue` - Create a new issue
+- `M-x linear-emacs-test-connection` - Test your Linear API connection
+- `M-x linear-emacs-toggle-debug` - Toggle debug mode for troubleshooting
+- `M-x linear-emacs-check-setup` - Verify your API key is loaded correctly
 
 ### Org-Mode Integration Commands
 
-- `M-x linear-list-issues` - Pull issues from Linear into org-mode
-- `M-x linear-sync-org-to-linear` - Sync the current org entry to Linear
-- `M-x linear-enable-org-sync` - Enable automatic synchronization
-- `M-x linear-disable-org-sync` - Disable automatic synchronization
+- `M-x linear-emacs-list-issues` - Pull issues from Linear into org-mode
+- `M-x linear-emacs-sync-org-to-linear` - Sync the current org entry to Linear
+- `M-x linear-emacs-enable-org-sync` - Enable automatic synchronization
+- `M-x linear-emacs-disable-org-sync` - Disable automatic synchronization
 
 #### Improved Synchronization Commands
 
@@ -227,11 +245,11 @@ For Doom Emacs, you can set up convenient keybindings:
 ```elisp
 (map! :leader
       (:prefix ("l" . "Linear")
-       :desc "Sync all Linear issues" "s" #'linear-list-issues
-       :desc "New issue" "n" #'linear-new-issue
+       :desc "Sync all Linear issues" "s" #'linear-emacs-list-issues
+       :desc "New issue" "n" #'linear-emacs-new-issue
        :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync
-       :desc "Test connection" "c" #'linear-test-connection
-       :desc "Toggle debug" "d" #'linear-toggle-debug))
+       :desc "Test connection" "c" #'linear-emacs-test-connection
+       :desc "Toggle debug" "d" #'linear-emacs-toggle-debug))
 ```
 
 In the optimized configuration, these keybindings are already set up for you:
@@ -239,7 +257,7 @@ In the optimized configuration, these keybindings are already set up for you:
 ```elisp
 (map! :leader
       :prefix "l"
-      :desc "Sync all Linear issues" "s" #'linear-list-issues
+      :desc "Sync all Linear issues" "s" #'linear-emacs-list-issues
       :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync)
 ```
 
@@ -253,7 +271,7 @@ To avoid synchronization performance issues, the optimized configuration:
 
 ```elisp
 ;; In your config.el
-(after! linear
+(after! linear-emacs
   ;; Improved synchronization function that only updates the changed issue
   (defun my/linear-sync-single-issue-at-point ()
     "Sync only the current issue at point to Linear API."
@@ -266,8 +284,8 @@ To avoid synchronization performance issues, the optimized configuration:
         ;; [Implementation details omitted for brevity]
         )))
 
-  ;; Override linear-sync-org-to-linear to only sync the current issue
-  (defun linear-sync-org-to-linear ()
+  ;; Override linear-emacs-sync-org-to-linear to only sync the current issue
+  (defun linear-emacs-sync-org-to-linear ()
     "Sync only the current issue to Linear API."
     (interactive)
     (my/linear-sync-single-issue-at-point))
@@ -275,7 +293,7 @@ To avoid synchronization performance issues, the optimized configuration:
   ;; Add convenient keybinding for manually syncing all issues
   (map! :leader
         :prefix "l"
-        :desc "Sync all Linear issues" "s" #'linear-list-issues
+        :desc "Sync all Linear issues" "s" #'linear-emacs-list-issues
         :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync))
 ```
 
@@ -284,24 +302,24 @@ To avoid synchronization performance issues, the optimized configuration:
 Enable debug logging to troubleshoot issues:
 
 ```elisp
-(setq linear-debug t)
+(setq linear-emacs-debug t)
 ```
 
 ## Troubleshooting
 
 1. Check your connection:
    ```
-   M-x linear-test-connection
+   M-x linear-emacs-test-connection
    ```
 
 2. Enable debug mode:
    ```
-   M-x linear-toggle-debug
+   M-x linear-emacs-toggle-debug
    ```
 
 3. Verify your API key is loaded correctly:
    ```
-   M-x linear-check-setup
+   M-x linear-emacs-check-setup
    ```
 
 4. Check the `*Messages*` buffer for detailed error information when debug mode is enabled
@@ -312,4 +330,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the GPL-3.0 License - see the [LICENSE.txt](LICENSE.txt) file for details.
+This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) file for details.
