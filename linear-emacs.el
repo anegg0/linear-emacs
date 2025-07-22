@@ -241,12 +241,84 @@ logged to the *Messages* buffer."
           (linear-emacs--log "Formatted team members: %s" (prin1-to-string formatted-members))
           formatted-members)))))
 
+;;; Project Management
+
+(defun linear-emacs-get-projects (team-id)
+  "Get a list of projects for the given TEAM-ID."
+  (linear-emacs--log "Fetching projects for team %s" team-id)
+  (let* ((query "query GetProjects($teamId: String!) {
+  team(id: $teamId) {
+    projects {
+      nodes {
+        id
+        name
+        description
+        state
+      }
+    }
+  }
+}")
+         (variables `(("teamId" . ,team-id)))
+         (response (linear-emacs--graphql-request query variables)))
+    (when response
+      (let ((projects (cdr (assoc 'nodes (assoc 'projects (assoc 'team (assoc 'data response)))))))
+        ;; Convert vector to list if needed
+        (when (vectorp projects)
+          (setq projects (append projects nil)))
+        (linear-emacs--log "Retrieved %d projects" (length projects))
+        projects))))
+
+(defun linear-emacs-select-project (team-id)
+  "Prompt user to select a project from TEAM-ID."
+  (let* ((projects (linear-emacs-get-projects team-id))
+         (project-names (when projects
+                          (mapcar (lambda (project)
+                                    (cons (cdr (assoc 'name project)) project))
+                                  projects)))
+         (selected (when project-names
+                     (completing-read "Select project (optional): " 
+                                      (cons "None" project-names) nil t nil nil "None"))))
+    (unless (string= selected "None")
+      (cdr (assoc selected project-names)))))
+
 ;;; Issue Management
 
-(defun linear-emacs-get-issues-page (&optional after)
-  "Get a page of issues assigned to the user starting AFTER the given cursor."
-  (linear-emacs--log "Fetching assigned issues page %s" (if after (format "after %s" after) "first page"))
-  (let* ((query "query GetAssignedIssues($first: Int!, $after: String) {
+(defun linear-emacs-get-issues-page (&optional after project-id)
+  "Get a page of issues assigned to the user starting AFTER the given cursor.
+Optionally filter by PROJECT-ID."
+  (linear-emacs--log "Fetching assigned issues page %s%s" 
+                     (if after (format "after %s" after) "first page")
+                     (if project-id (format " for project %s" project-id) ""))
+  (let* ((query (if project-id
+                    "query GetAssignedIssues($first: Int!, $after: String, $projectId: ID!) {
+  viewer {
+  assignedIssues(first: $first, after: $after, filter: { project: { id: { eq: $projectId } } }) {
+  nodes {
+  id
+  identifier
+  title
+  description
+  priority
+  state { name color }
+  team { id name }
+  labels {
+  nodes {
+  name
+  }
+  }
+  project {
+  id
+  name
+  }
+  }
+  pageInfo {
+  hasNextPage
+  endCursor
+  }
+  }
+  }
+  }"
+                  "query GetAssignedIssues($first: Int!, $after: String) {
   viewer {
   assignedIssues(first: $first, after: $after) {
   nodes {
@@ -263,6 +335,7 @@ logged to the *Messages* buffer."
   }
   }
   project {
+  id
   name
   }
   }
@@ -272,9 +345,10 @@ logged to the *Messages* buffer."
   }
   }
   }
-  }")
+  }"))
          (variables `(("first" . 100) ; Fetch 100 issues per page
-                      ,@(when after `(("after" . ,after)))))
+                      ,@(when after `(("after" . ,after)))
+                      ,@(when project-id `(("projectId" . ,project-id)))))
          (response (linear-emacs--graphql-request query variables)))
     (linear-emacs--log "Response: %s" (prin1-to-string response))
     (if response
@@ -300,9 +374,11 @@ logged to the *Messages* buffer."
         (message "Failed to retrieve issues")
         nil))))
 
-(defun linear-emacs-get-issues ()
-  "Get a list of all issues assigned to the user with pagination."
-  (linear-emacs--log "Fetching all assigned issues with pagination")
+(defun linear-emacs-get-issues (&optional project-id)
+  "Get a list of all issues assigned to the user with pagination.
+Optionally filter by PROJECT-ID."
+  (linear-emacs--log "Fetching all assigned issues with pagination%s"
+                     (if project-id (format " for project %s" project-id) ""))
 
   (let ((all-issues '())
         (has-more t)
@@ -313,7 +389,7 @@ logged to the *Messages* buffer."
     ;; Loop through all pages
     (while (and has-more (< page-num max-pages))
       (linear-emacs--log "Fetching page %d of issues" page-num)
-      (let ((page-result (linear-emacs-get-issues-page cursor)))
+      (let ((page-result (linear-emacs-get-issues-page cursor project-id)))
         (if page-result
             (let ((page-issues (plist-get page-result :issues))
                   (next-has-more (plist-get page-result :has-next-page))
@@ -716,6 +792,7 @@ logged to the *Messages* buffer."
          (team-name (or (and team-assoc (cdr (assoc 'name team-assoc))) ""))
          (project-assoc (assoc 'project issue))
          (project-name (or (and project-assoc (cdr (assoc 'name project-assoc))) ""))
+         (project-id (or (and project-assoc (cdr (assoc 'id project-assoc))) ""))
          (labels-assoc (assoc 'labels issue))
          (labels-nodes (and labels-assoc (cdr (assoc 'nodes labels-assoc))))
          (labels (if (and labels-nodes (not (eq labels-nodes 'null)))
@@ -756,6 +833,7 @@ logged to the *Messages* buffer."
 
     (setq result (concat result (format ":PROJECT: %s\n" project-name)))
     (setq result (concat result (format ":LINK: %s\n" link)))
+    (setq result (concat result (format ":PROJECT-ID: %s\n" project-id)))
     (setq result (concat result ":END:\n"))
 
     result))
@@ -763,12 +841,13 @@ logged to the *Messages* buffer."
 ;;; User-facing Commands
 
 ;;;###autoload
-(defun linear-emacs-list-issues ()
+(defun linear-emacs-list-issues (&optional project-id)
   "Update linear.org file with assigned Linear issues and display it.
-  Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCKED."
+  Only shows issues with statuses TODO, IN-PROGRESS, IN-REVIEW, BACKLOG, and BLOCKED.
+  Optionally filter by PROJECT-ID."
   (interactive)
   (linear-emacs--log "Executing linear-emacs-list-issues")
-  (let* ((issues (linear-emacs-get-issues))
+  (let* ((issues (linear-emacs-get-issues project-id))
          (org-file-path linear-emacs-org-file-path)
          ;; Define the list of statuses to include (case insensitive)
          (include-statuses '("todo" "in progress" "in review" "backlog" "blocked")))
@@ -829,6 +908,25 @@ logged to the *Messages* buffer."
                      (message "Error updating linear.org: %s" (error-message-string err))))))
 
       (message "No issues found or failed to retrieve issues"))))
+
+;;;###autoload
+(defun linear-emacs-list-issues-by-project ()
+  "List Linear issues filtered by a selected project."
+  (interactive)
+  ;; First select team
+  (let* ((team (if linear-emacs-default-team-id
+                   (list (cons 'id linear-emacs-default-team-id))
+                 (linear-emacs-select-team)))
+         (team-id (cdr (assoc 'id team))))
+    (if team-id
+        (let* ((project (linear-emacs-select-project team-id))
+               (project-id (and project (cdr (assoc 'id project)))))
+          (if project-id
+              (progn
+                (message "Fetching issues for project: %s" (cdr (assoc 'name project)))
+                (linear-emacs-list-issues project-id))
+            (message "No project selected")))
+      (message "No team selected"))))
 
 ;;;###autoload
 (defun linear-emacs-new-issue ()
@@ -913,6 +1011,10 @@ logged to the *Messages* buffer."
                (selected-type (when (and selected-label-name (not (string-empty-p selected-label-name)))
                                 (cdr (assoc selected-label-name issue-types))))
 
+               ;; Get project
+               (selected-project (linear-emacs-select-project team-id))
+               (selected-project-id (and selected-project (cdr (assoc 'id selected-project))))
+
                ;; Prepare mutation
                (query "mutation CreateIssue($input: IssueCreateInput!) {
   issueCreate(input: $input) {
@@ -938,7 +1040,9 @@ logged to the *Messages* buffer."
                         ,@(when estimate-num
                             `(("estimate" . ,estimate-num)))
                         ,@(when selected-type
-                            `(("labelIds" . [,selected-type])))))
+                            `(("labelIds" . [,selected-type])))
+                        ,@(when selected-project-id
+                            `(("projectId" . ,selected-project-id)))))
 
                (response (linear-emacs--graphql-request query `(("input" . ,input)))))
 
