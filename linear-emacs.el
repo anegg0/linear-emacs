@@ -89,6 +89,25 @@ logged to the *Messages* buffer."
   :type 'file
   :group 'linear-emacs)
 
+(defcustom linear-emacs-issues-state-mapping
+  '(("Todo" . "TODO")
+    ("In Progress" . "IN-PROGRESS")
+    ("In Review" . "IN-REVIEW")
+    ("Backlog" . "BACKLOG")
+    ("Blocked" . "BLOCKED")
+    ("Done" . "DONE"))
+  "Mapping between Linear state names and org-mode TODO states.
+Each element is a cons cell (LINEAR-STATE . ORG-STATE).
+This mapping is used for:
+- Converting Linear states to org TODO states
+- Converting org TODO states to Linear states
+- Filtering which issues to include in the org file
+Only issues with Linear states listed here will be included
+when running `linear-emacs-list-issues'."
+  :type '(alist :key-type string :value-type string)
+  :group 'linear-emacs)
+
+
 ;; Cache variables
 (defvar linear-emacs--cache-issues nil
   "Cache for issues.")
@@ -587,10 +606,12 @@ logged to the *Messages* buffer."
   (let ((todo-state nil)
         (issue-id nil)
         (issue-identifier nil)
-        (team-id nil))
+        (team-id nil)
+        ;; Build regex pattern from the mapping
+        (todo-states-pattern (regexp-opt (mapcar #'cdr linear-emacs-issues-state-mapping) t)))
     
     ;; Extract TODO state
-    (when (looking-at "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)")
+    (when (looking-at (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern))
       (setq todo-state (match-string 1))
       
       ;; Get issue ID, identifier, and team ID from properties
@@ -618,17 +639,6 @@ logged to the *Messages* buffer."
           :issue-identifier issue-identifier
           :team-id team-id)))
 
-(defun linear-emacs--map-org-state-to-linear (todo-state)
-  "Map \='org-mode\=' TODO state to Linear state name.
-  TODO-STATE is the \='org-mode\=' state string."
-  (cond
-   ((string= todo-state "TODO") "Todo")
-   ((string= todo-state "IN-PROGRESS") "In Progress")
-   ((string= todo-state "IN-REVIEW") "In Review")
-   ((string= todo-state "BACKLOG") "Backlog")
-   ((string= todo-state "BLOCKED") "Blocked")
-   ((string= todo-state "DONE") "Done")
-   (t nil)))
 
 (defun linear-emacs--process-heading-at-point ()
   "Process the Linear issue at the current org heading."
@@ -655,9 +665,10 @@ logged to the *Messages* buffer."
     ;; Otherwise, scan the entire file
     (save-excursion
       (goto-char (point-min))
-      (while (re-search-forward "^\\*\\*\\* \\(TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE\\)" nil t)
-        (beginning-of-line)
-        (linear-emacs--process-heading-at-point)))))
+      (let ((todo-states-pattern (regexp-opt (mapcar #'cdr linear-emacs-state-mapping) t)))
+        (while (re-search-forward (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern) nil t)
+          (beginning-of-line)
+          (linear-emacs--process-heading-at-point))))))
 
 (defun linear-emacs-sync-current-heading-to-linear ()
   "Sync the current org heading's TODO state to Linear API.
@@ -672,14 +683,22 @@ logged to the *Messages* buffer."
 (defun linear-emacs--map-linear-state-to-org (state)
   "Map Linear state name to \='org-mode\=' TODO state string.
   STATE is the Linear state string."
-  (cond
-   ((string-equal state "Done") "DONE")
-   ((string-equal state "Todo") "TODO")
-   ((string-equal state "In Progress") "IN-PROGRESS")
-   ((string-equal state "In Review") "IN-REVIEW")
-   ((string-equal state "Backlog") "BACKLOG")
-   ((string-equal state "Blocked") "BLOCKED")
-   (t "TODO")))
+  (or (cdr (assoc state linear-emacs-issues-state-mapping))
+      "TODO"))  ; Default fallback
+
+(defun linear-emacs--map-org-state-to-linear (todo-state)
+  "Map \='org-mode\=' TODO state to Linear state name.
+  TODO-STATE is the \='org-mode\=' state string."
+  (or (car (rassoc todo-state linear-emacs-issues-state-mapping))
+      nil))
+
+
+(defun linear-emacs--get-included-linear-states ()
+  "Get list of Linear states to include based on the mapping.
+  Returns a list of lowercased state names for case-insensitive comparison."
+  (mapcar (lambda (mapping)
+            (downcase (car mapping)))
+          linear-emacs-state-mapping))
 
 (defun linear-emacs--map-linear-priority-to-org (priority-num)
   "Convert Linear priority number to \='org-mode\=' priority string.
@@ -771,7 +790,7 @@ logged to the *Messages* buffer."
   (let* ((issues (linear-emacs-get-issues))
          (org-file-path linear-emacs-org-file-path)
          ;; Define the list of statuses to include (case insensitive)
-         (include-statuses '("todo" "in progress" "in review" "backlog" "blocked")))
+         (include-statutes (linear-emacs--get-included-linear-states))
     (linear-emacs--log "Retrieved %d total issues before filtering" (length issues))
     (if (and issues (> (length issues) 0))
         (progn
@@ -806,7 +825,14 @@ logged to the *Messages* buffer."
                   (insert "#+TAGS: :\n")
                   (insert "#+filetags: :twai:b:\n")
                   (insert "#+STARTUP: overview\n")
-                  (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
+                  ;; Generate TODO states dynamically from mapping
+                  (insert (format "#+TODO: %s | DONE\n"
+                                  (mapconcat (lambda (mapping)
+                                               (cdr mapping))
+                                             (cl-remove-if (lambda (m)
+                                                             (string= (cdr m) "DONE"))
+                                                           linear-emacs-issues-state-mapping)
+                                             " ")))
                   (insert ":END:\n\n")
 
                   ;; Insert issues
