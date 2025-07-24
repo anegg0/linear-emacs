@@ -665,7 +665,7 @@ when running `linear-emacs-list-issues'."
     ;; Otherwise, scan the entire file
     (save-excursion
       (goto-char (point-min))
-      (let ((todo-states-pattern (regexp-opt (mapcar #'cdr linear-emacs-state-mapping) t)))
+      (let ((todo-states-pattern (regexp-opt (mapcar #'cdr linear-emacs-issues-state-mapping) t)))
         (while (re-search-forward (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern) nil t)
           (beginning-of-line)
           (linear-emacs--process-heading-at-point))))))
@@ -698,7 +698,7 @@ when running `linear-emacs-list-issues'."
   Returns a list of lowercased state names for case-insensitive comparison."
   (mapcar (lambda (mapping)
             (downcase (car mapping)))
-          linear-emacs-state-mapping))
+          linear-emacs-issues-state-mapping))
 
 (defun linear-emacs--map-linear-priority-to-org (priority-num)
   "Convert Linear priority number to \='org-mode\=' priority string.
@@ -790,7 +790,7 @@ when running `linear-emacs-list-issues'."
   (let* ((issues (linear-emacs-get-issues))
          (org-file-path linear-emacs-org-file-path)
          ;; Define the list of statuses to include (case insensitive)
-         (include-statutes (linear-emacs--get-included-linear-states))
+         (include-statuses (linear-emacs--get-included-linear-states)))
     (linear-emacs--log "Retrieved %d total issues before filtering" (length issues))
     (if (and issues (> (length issues) 0))
         (progn
@@ -825,14 +825,7 @@ when running `linear-emacs-list-issues'."
                   (insert "#+TAGS: :\n")
                   (insert "#+filetags: :twai:b:\n")
                   (insert "#+STARTUP: overview\n")
-                  ;; Generate TODO states dynamically from mapping
-                  (insert (format "#+TODO: %s | DONE\n"
-                                  (mapconcat (lambda (mapping)
-                                               (cdr mapping))
-                                             (cl-remove-if (lambda (m)
-                                                             (string= (cdr m) "DONE"))
-                                                           linear-emacs-issues-state-mapping)
-                                             " ")))
+                  (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
                   (insert ":END:\n\n")
 
                   ;; Insert issues
