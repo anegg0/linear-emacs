@@ -15,8 +15,11 @@ I was just sick of leaving Emacs for the uncomfortable world of some corporation
 - Track issue priorities, labels, and assignments
 - Support for issue filtering and organization
 - Automatically sync changes between systems
-- Create and list issues under specific Linear projects
-- Filter issues by project
+- **Project Management Integration:**
+  - Create and list issues under specific Linear projects
+  - Filter issues by project with dedicated command
+  - Project selection during issue creation
+  - Project information included in org-mode export
 
 ## Installation
 
@@ -198,13 +201,13 @@ The org file will have the following structure:
 :ID:       issue-unique-id
 :ID-LINEAR: TEAM-123
 :TEAM: Team Name
+:PROJECT: Mobile App Redesign
+:PROJECT-ID: proj-a1b2c3d4-e5f6-7890-abcd-ef1234567890
 :DESCRIPTION: |
   Issue description goes here
 :PRIORITY: High
-:LABELS: [label1, label2]
-:PROJECT: Project Name
+:LABELS: [mobile, ui, redesign]
 :LINK: https://linear.app/issue/TEAM-123
-:PROJECT-ID: project-uuid
 :END:
 ```
 
