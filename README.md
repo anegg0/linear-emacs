@@ -15,6 +15,11 @@ I was just sick of leaving Emacs for the uncomfortable world of some corporation
 - Track issue priorities, labels, and assignments
 - Support for issue filtering and organization
 - Automatically sync changes between systems
+- **Project Management Integration:**
+  - Create and list issues under specific Linear projects
+  - Filter issues by project with dedicated command
+  - Project selection during issue creation
+  - Project information included in org-mode export
 
 ## Installation
 
@@ -196,11 +201,12 @@ The org file will have the following structure:
 :ID:       issue-unique-id
 :ID-LINEAR: TEAM-123
 :TEAM: Team Name
+:PROJECT: Mobile App Redesign
+:PROJECT-ID: proj-a1b2c3d4-e5f6-7890-abcd-ef1234567890
 :DESCRIPTION: |
   Issue description goes here
 :PRIORITY: High
-:LABELS: [label1, label2]
-:PROJECT: Project Name
+:LABELS: [mobile, ui, redesign]
 :LINK: https://linear.app/issue/TEAM-123
 :END:
 ```
@@ -225,7 +231,8 @@ Map Linear priorities to org priorities:
 ### Commands
 
 - `M-x linear-emacs-list-issues` - Display your assigned issues
-- `M-x linear-emacs-new-issue` - Create a new issue
+- `M-x linear-emacs-list-issues-by-project` - Display issues filtered by a selected project
+- `M-x linear-emacs-new-issue` - Create a new issue (with project selection)
 - `M-x linear-emacs-test-connection` - Test your Linear API connection
 - `M-x linear-emacs-toggle-debug` - Toggle debug mode for troubleshooting
 - `M-x linear-emacs-check-setup` - Verify your API key is loaded correctly
@@ -252,6 +259,7 @@ For Doom Emacs, you can set up convenient keybindings:
 (map! :leader
       (:prefix ("l" . "Linear")
        :desc "Sync all Linear issues" "s" #'linear-emacs-list-issues
+       :desc "List issues by project" "p" #'linear-emacs-list-issues-by-project
        :desc "New issue" "n" #'linear-emacs-new-issue
        :desc "Toggle Linear auto-sync" "t" #'my/toggle-linear-auto-sync
        :desc "Test connection" "c" #'linear-emacs-test-connection
