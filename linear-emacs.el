@@ -290,27 +290,47 @@ Optionally filter by PROJECT-ID."
                      (if after (format "after %s" after) "first page")
                      (if project-id (format " for project %s" project-id) ""))
   (let* ((query (if project-id
-                    "query GetAssignedIssues($first: Int!, $after: String, $projectId: ID!) {
-  viewer {
-  assignedIssues(first: $first, after: $after, filter: { project: { id: { eq: $projectId } } }) {
-  nodes {
-  id
-  identifier
-  title
-  description
-  priority
-  state { name color }
-  team { id name }
-  labels {
-  nodes {
-  name
-  }
-  }
-  project {
-  id
-  name
-  }
-  }
+                    linear-emacs--get-assigned-issues-query)))
+
+(defconst linear-emacs--get-assigned-issues-query
+  "query GetAssignedIssues($first: Int!, $after: String, $projectId: ID!) {
+    viewer {
+      assignedIssues(
+        first: $first,
+        after: $after,
+        filter: {
+          project: {
+            id: { eq: $projectId }
+          }
+        }
+      ) {
+        nodes {
+          id
+          identifier
+          title
+          description
+          priority
+          state {
+            name
+            color
+          }
+          team {
+            id
+            name
+          }
+          labels {
+            nodes {
+              name
+            }
+          }
+          project {
+            id
+            name
+          }
+        }
+      }
+    }
+  }")
   pageInfo {
   hasNextPage
   endCursor
