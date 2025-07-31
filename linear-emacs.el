@@ -261,7 +261,7 @@ logged to the *Messages* buffer."
          (variables `(("teamId" . ,team-id)))
          (response (linear-emacs--graphql-request query variables)))
     (when response
-      (let ((projects (cdr (assoc 'nodes (assoc 'projects (assoc 'team (assoc 'data response)))))))
+      (let ((projects (linear-emacs--extract-nodes response 'data 'team 'projects 'nodes)))
         ;; Convert vector to list if needed
         (when (vectorp projects)
           (setq projects (append projects nil)))
