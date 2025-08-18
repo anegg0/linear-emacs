@@ -607,8 +607,8 @@ when running `linear-emacs-list-issues'."
         (issue-id nil)
         (issue-identifier nil)
         (team-id nil)
-        ;; Build regex pattern from the mapping
-        (todo-states-pattern (regexp-opt (mapcar #'cdr linear-emacs-issues-state-mapping) t)))
+        ;; Use precomputed regex pattern from global variable
+        (todo-states-pattern linear-emacs-todo-states-pattern))
     
     ;; Extract TODO state
     (when (looking-at (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern))
