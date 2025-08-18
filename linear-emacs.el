@@ -607,7 +607,7 @@ when running `linear-emacs-list-issues'."
         (issue-id nil)
         (issue-identifier nil)
         (team-id nil)
-        ;; Use precomputed regex pattern from global variable
+        ;; Use regex pattern for TODO states
         (todo-states-pattern linear-emacs-todo-states-pattern))
     
     ;; Extract TODO state
