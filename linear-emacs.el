@@ -665,7 +665,7 @@ when running `linear-emacs-list-issues'."
     ;; Otherwise, scan the entire file
     (save-excursion
       (goto-char (point-min))
-      (let ((todo-states-pattern (regexp-opt (mapcar #'cdr linear-emacs-issues-state-mapping) t)))
+      (let ((todo-states-pattern (linear-emacs--get-todo-states-pattern)))
         (while (re-search-forward (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern) nil t)
           (beginning-of-line)
           (linear-emacs--process-heading-at-point))))))
