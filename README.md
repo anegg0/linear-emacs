@@ -217,7 +217,7 @@ The `linear-emacs-issues-state-mapping` variable provides a unified configuratio
 
 #### Customization
 
-You can update the default value 
+You can update the default value of the `linear-emacs-issues-state-mapping` variable to customize how Linear issue states map to Org-mode TODO keywords. For example:
 ``` elisp
 (setq linear-emacs-issues-state-mapping
       '(("SuperTodo" . "TODO")
