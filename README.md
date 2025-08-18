@@ -207,6 +207,31 @@ The org file will have the following structure:
 
 When you change the TODO state of an issue in the org file, it will automatically synchronize with Linear.
 
+### Status Mapping
+
+The `linear-emacs-issues-state-mapping` variable provides a unified configuration for mapping between Linear issue states and Org-mode TODO states. This single configuration controls:
+
+- Which Linear issues are synced to your Org file
+- How Linear states are converted to Org TODO keywords
+- How Org TODO keywords are converted back to Linear states
+
+#### Customization
+
+You can update the default value of the `linear-emacs-issues-state-mapping` variable to customize how Linear issue states map to Org-mode TODO keywords. For example:
+``` elisp
+(setq linear-emacs-issues-state-mapping
+      '(("SuperTodo" . "TODO")
+        ("In Very Much Progress" . "WORKING")
+        ("In Long Review" . "REVIEW")
+        ("Finished" . "DONE")))
+```
+
+or add a single state to it
+
+``` elisp
+(add-to-list 'linear-emacs-issues-state-mapping '("On Hold" . "HOLD"))
+```
+
 ### Priority Mapping
 
 Map Linear priorities to org priorities:
