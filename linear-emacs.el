@@ -107,6 +107,11 @@ when running `linear-emacs-list-issues'."
   :type '(alist :key-type string :value-type string)
   :group 'linear-emacs)
 
+(defvar linear-emacs-todo-states-pattern nil
+  "Cached regex pattern for matching org-mode TODO states.
+This pattern is generated from `linear-emacs-issues-state-mapping'.
+Use `linear-emacs--get-todo-states-pattern' to get the pattern.")
+
 
 ;; Cache variables
 (defvar linear-emacs--cache-issues nil
@@ -607,8 +612,8 @@ when running `linear-emacs-list-issues'."
         (issue-id nil)
         (issue-identifier nil)
         (team-id nil)
-        ;; Use regex pattern for TODO states
-        (todo-states-pattern linear-emacs-todo-states-pattern))
+        ;; Get regex pattern for TODO states
+        (todo-states-pattern (linear-emacs--get-todo-states-pattern)))
     
     ;; Extract TODO state
     (when (looking-at (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern))
@@ -699,6 +704,16 @@ when running `linear-emacs-list-issues'."
   (mapcar (lambda (mapping)
             (downcase (car mapping)))
           linear-emacs-issues-state-mapping))
+
+(defun linear-emacs--get-todo-states-pattern ()
+  "Get or generate the regex pattern for matching org-mode TODO states.
+  The pattern is built from the org-mode states in `linear-emacs-issues-state-mapping'.
+  The result is cached in `linear-emacs-todo-states-pattern' for performance."
+  (or linear-emacs-todo-states-pattern
+      (let ((org-states (mapcar #'cdr linear-emacs-issues-state-mapping)))
+        ;; Generate pattern like "TODO\\|IN-PROGRESS\\|IN-REVIEW\\|BACKLOG\\|BLOCKED\\|DONE"
+        (setq linear-emacs-todo-states-pattern
+              (mapconcat #'regexp-quote org-states "\\|")))))
 
 (defun linear-emacs--map-linear-priority-to-org (priority-num)
   "Convert Linear priority number to \='org-mode\=' priority string.
