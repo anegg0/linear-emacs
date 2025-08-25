@@ -10,11 +10,13 @@ I was just sick of leaving Emacs for the uncomfortable world of some corporation
 
 - List, view, and create Linear issues directly from Emacs
 - Bi-directional synchronization between Linear.app and org-mode
-- Map Linear workflow states to org-mode TODO states
+- **Configurable state mapping** between Linear workflow states and org-mode TODO states
+- **Dynamic pattern generation** for flexible org-mode integration
 - Update issue details from either Linear or Emacs
 - Track issue priorities, labels, and assignments
 - Support for issue filtering and organization
 - Automatically sync changes between systems
+- Doom Emacs integration with optimized configuration examples
 
 ## Installation
 
@@ -65,10 +67,34 @@ git clone https://github.com/anegg0/linear-emacs.git
 
 ### Using Doom Emacs
 
+In your `packages.el`:
 ```elisp
 (package! linear-emacs
   :recipe (:host github :repo "anegg0/linear-emacs" :files ("*.el")))
 ```
+
+In your `config.el`:
+```elisp
+(use-package! linear-emacs
+  :commands (linear-emacs-list-issues
+             linear-emacs-new-issue
+             linear-emacs-enable-org-sync)
+  :config
+  ;; Load API key from environment or auth-source
+  (linear-emacs-load-api-key-from-env)
+  
+  ;; Optional: Set default team
+  ;; (setq linear-emacs-default-team-id "your-team-id")
+  
+  ;; Optional: Customize org file location
+  ;; (setq linear-emacs-org-file-path (expand-file-name "gtd/linear.org" org-directory))
+  
+  ;; Optional: Customize state mapping (see Status Mapping section below)
+  ;; (setq linear-emacs-issues-state-mapping
+  ;;       '(("Todo" . "TODO")
+  ;;         ("In Progress" . "DOING")
+  ;;         ("Done" . "DONE")))
+  )
 
 ## Configuration
 
@@ -149,7 +175,70 @@ By default, Linear issues are saved to `gtd/linear.org` in your `org-directory`.
 
 ### Org-Mode Integration
 
-To enable bidirectional synchronization with org-mode in Doom Emacs:
+#### Complete Doom Emacs Configuration
+
+Here's a comprehensive Doom Emacs configuration that includes API key management, state mapping, and auto-sync:
+
+```elisp
+;; In your config.el
+(use-package! linear-emacs
+  :after org
+  :commands (linear-emacs-list-issues
+             linear-emacs-new-issue
+             linear-emacs-enable-org-sync
+             linear-emacs-sync-org-to-linear)
+  :init
+  ;; Set file path before package loads
+  (setq linear-emacs-org-file-path (expand-file-name "gtd/linear.org" org-directory))
+  
+  :config
+  ;; Load API key from environment
+  (linear-emacs-load-api-key-from-env)
+  
+  ;; Or use auth-source for secure storage
+  ;; (my/linear-load-api-key-from-auth-source)
+  
+  ;; Customize state mapping to match your workflow
+  (setq linear-emacs-issues-state-mapping
+        '(("Todo" . "TODO")
+          ("In Progress" . "DOING")
+          ("In Review" . "REVIEW")
+          ("Blocked" . "HOLD")
+          ("Done" . "DONE")))
+  
+  ;; Optional: Set default team to skip selection prompt
+  ;; (setq linear-emacs-default-team-id "your-team-id")
+  
+  ;; Auto-enable sync when linear.org is opened
+  (defun my/enable-linear-org-sync ()
+    "Enable Linear-org synchronization when linear.org is opened."
+    (when (and buffer-file-name
+               (string-match-p "linear\\.org$" buffer-file-name))
+      (linear-emacs-enable-org-sync)
+      (message "Linear-org synchronization enabled for this buffer")))
+  
+  (add-hook 'find-file-hook #'my/enable-linear-org-sync)
+  
+  ;; Keybindings
+  (map! :leader
+        (:prefix ("l" . "linear")
+         :desc "List Linear issues" "l" #'linear-emacs-list-issues
+         :desc "Create new issue" "n" #'linear-emacs-new-issue
+         :desc "Sync current issue" "s" #'linear-emacs-sync-org-to-linear
+         :desc "Enable org sync" "e" #'linear-emacs-enable-org-sync
+         :desc "Disable org sync" "d" #'linear-emacs-disable-org-sync
+         :desc "Test connection" "t" #'linear-emacs-test-connection
+         :desc "Toggle debug mode" "D" #'linear-emacs-toggle-debug)))
+
+;; Ensure org-todo-keywords match your Linear mapping
+(after! org
+  (setq org-todo-keywords
+        '((sequence "TODO(t)" "DOING(d)" "REVIEW(r)" "HOLD(h)" "|" "DONE(D)"))))
+```
+
+#### Basic Setup
+
+For a simpler setup with automatic synchronization:
 
 ```elisp
 ;; In your config.el
@@ -161,7 +250,7 @@ To enable bidirectional synchronization with org-mode in Doom Emacs:
     "Enable Linear-org synchronization when linear.org is opened."
     (when (and buffer-file-name
                (string-match-p "linear\\.org$" buffer-file-name))
-      (when (fboundp 'linear-enable-org-sync)
+      (when (fboundp 'linear-emacs-enable-org-sync)
         (linear-emacs-enable-org-sync)
         (message "Linear-org synchronization enabled for this buffer"))))
   
@@ -211,26 +300,93 @@ When you change the TODO state of an issue in the org file, it will automaticall
 
 The `linear-emacs-issues-state-mapping` variable provides a unified configuration for mapping between Linear issue states and Org-mode TODO states. This single configuration controls:
 
-- Which Linear issues are synced to your Org file
+- Which Linear issues are synced to your Org file (only issues with mapped states are included)
 - How Linear states are converted to Org TODO keywords
 - How Org TODO keywords are converted back to Linear states
+- Dynamic generation of regex patterns for matching Org headings
+
+#### Default Mapping
+
+```elisp
+'(("Todo" . "TODO")
+  ("In Progress" . "IN-PROGRESS")
+  ("In Review" . "IN-REVIEW")
+  ("Backlog" . "BACKLOG")
+  ("Blocked" . "BLOCKED")
+  ("Done" . "DONE"))
+```
 
 #### Customization
 
-You can update the default value of the `linear-emacs-issues-state-mapping` variable to customize how Linear issue states map to Org-mode TODO keywords. For example:
-``` elisp
+You can customize the state mapping to match your workflow:
+
+```elisp
+;; Simple workflow
 (setq linear-emacs-issues-state-mapping
-      '(("SuperTodo" . "TODO")
-        ("In Very Much Progress" . "WORKING")
-        ("In Long Review" . "REVIEW")
-        ("Finished" . "DONE")))
+      '(("Todo" . "TODO")
+        ("In Progress" . "DOING")
+        ("Done" . "DONE")))
+
+;; Extended workflow with custom states
+(setq linear-emacs-issues-state-mapping
+      '(("Todo" . "TODO")
+        ("In Progress" . "WORKING")
+        ("In Review" . "REVIEW")
+        ("Testing" . "TEST")
+        ("Blocked" . "HOLD")
+        ("Done" . "DONE")
+        ("Cancelled" . "CANCELLED")))
 ```
 
-or add a single state to it
+Add a single state to the existing mapping:
 
-``` elisp
+```elisp
 (add-to-list 'linear-emacs-issues-state-mapping '("On Hold" . "HOLD"))
 ```
+
+#### Doom Emacs Configuration
+
+For Doom Emacs users, configure the state mapping in your `config.el`:
+
+```elisp
+(after! linear-emacs
+  ;; Custom state mapping for your workflow
+  (setq linear-emacs-issues-state-mapping
+        '(("Todo" . "TODO")
+          ("In Progress" . "WIP")
+          ("In Review" . "REVIEW")
+          ("Done" . "DONE")))
+  
+  ;; Ensure your org-todo-keywords match
+  (setq org-todo-keywords
+        '((sequence "TODO(t)" "WIP(w)" "REVIEW(r)" "|" "DONE(d)"))))
+```
+
+**Important**: Make sure your `org-todo-keywords` configuration includes all the Org states you use in your mapping. The package dynamically generates regex patterns based on your mapping to match Org headings.
+
+#### How Dynamic Pattern Generation Works
+
+The package automatically generates regex patterns from your state mapping configuration. This means:
+
+1. **No hardcoded patterns**: The regex patterns used to match Org headings are built dynamically from your `linear-emacs-issues-state-mapping`
+
+2. **Automatic updates**: When you change your state mapping, the patterns are automatically regenerated
+
+3. **Performance optimized**: Patterns are cached for efficiency and only regenerated when needed
+
+For example, with this mapping:
+```elisp
+'(("Todo" . "TODO")
+  ("In Progress" . "WORKING")
+  ("Done" . "DONE"))
+```
+
+The package generates the pattern: `"TODO\\|WORKING\\|DONE"`
+
+This pattern is then used to match Org headings like:
+- `*** TODO Fix the bug`
+- `*** WORKING Implement feature`
+- `*** DONE Complete documentation`
 
 ### Priority Mapping
 
