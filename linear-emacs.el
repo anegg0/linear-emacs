@@ -83,7 +83,7 @@ logged to the *Messages* buffer."
   :group 'linear-emacs)
 
 (defcustom linear-emacs-include-statuses
-  ("todo" "in progress" "in review" "backlog" "blocked")
+  '("todo" "in progress" "in review" "backlog" "blocked")
   "Default status values from linear that should be included when listing tickets.
 The values are case insensitive"
   :type '(repeat string)
