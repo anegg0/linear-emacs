@@ -82,6 +82,13 @@ logged to the *Messages* buffer."
   :type 'boolean
   :group 'linear-emacs)
 
+(defcustom linear-emacs-include-statuses
+  '("todo" "in progress" "in review" "backlog" "blocked")
+  "Default status values from linear that should be included when listing tickets.
+The values are case insensitive"
+  :type '(repeat string)
+  :group 'linear-emacs)
+
 (defcustom linear-emacs-org-file-path (expand-file-name "gtd/linear.org" org-directory)
   "Path to the org file where Linear issues are stored.
   This file will be created/updated when running `linear-emacs-list-issues\\='.
@@ -769,9 +776,7 @@ logged to the *Messages* buffer."
   (interactive)
   (linear-emacs--log "Executing linear-emacs-list-issues")
   (let* ((issues (linear-emacs-get-issues))
-         (org-file-path linear-emacs-org-file-path)
-         ;; Define the list of statuses to include (case insensitive)
-         (include-statuses '("todo" "in progress" "in review" "backlog" "blocked")))
+         (org-file-path linear-emacs-org-file-path))
     (linear-emacs--log "Retrieved %d total issues before filtering" (length issues))
     (if (and issues (> (length issues) 0))
         (progn
@@ -789,8 +794,8 @@ logged to the *Messages* buffer."
                      (linear-emacs--log "Issue %s has state: %s (include: %s)"
                                         (cdr (assoc 'identifier issue))
                                         state-lower
-                                        (if (member state-lower include-statuses) "yes" "no"))
-                     (member state-lower include-statuses)))
+                                        (if (member state-lower linear-emacs-include-statuses) "yes" "no"))
+                     (member state-lower linear-emacs-include-statuses)))
                  issues))
 
           (linear-emacs--log "After filtering by status, have %d issues" (length issues))
