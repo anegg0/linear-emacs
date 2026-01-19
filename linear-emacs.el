@@ -93,10 +93,10 @@ logged to the *Messages* buffer."
 
 (defcustom linear-emacs-issues-state-mapping
   '(("Todo" . "TODO")
-    ("In Progress" . "IN-PROGRESS")
-    ("In Review" . "IN-REVIEW")
-    ("Backlog" . "BACKLOG")
-    ("Blocked" . "BLOCKED")
+    ("Backlog" . "TODO")
+    ("In Progress" . "NEXT")
+    ("In Review" . "WAITING")
+    ("Blocked" . "WAITING")
     ("Done" . "DONE"))
   "Mapping between Linear state names and org-mode TODO states.
 Each element is a cons cell (LINEAR-STATE . ORG-STATE).
@@ -346,6 +346,10 @@ PROJECT-ID optionally filters by project."
   title
   description
   priority
+  dueDate
+  startedAt
+  createdAt
+  cycle { id name number startsAt endsAt }
   state { name color }
   team { id name }
   labels {
@@ -374,6 +378,10 @@ PROJECT-ID optionally filters by project."
   title
   description
   priority
+  dueDate
+  startedAt
+  createdAt
+  cycle { id name number startsAt endsAt }
   state { name color }
   team { id name }
   labels {
@@ -886,36 +894,21 @@ CALLBACK is called with the list of states."
 
 (defun linear-emacs--extract-org-heading-properties ()
   "Extract issue properties from org heading at point.
-  Returns a plist with :todo-state, :issue-id, :issue-identifier, and :team-id."
-  (let ((todo-state nil)
-        (issue-id nil)
-        (issue-identifier nil)
-        (team-id nil)
-        ;; Get regex pattern for TODO states
-        (todo-states-pattern (linear-emacs--get-todo-states-pattern)))
+  Returns a plist with :todo-state, :issue-id, :issue-identifier, and :team-id.
+  Uses org-mode APIs for robust property extraction."
+  (let* ((todo-state (org-get-todo-state))
+         (valid-states (mapcar #'cdr linear-emacs-issues-state-mapping))
+         (issue-id nil)
+         (issue-identifier nil)
+         (team-id nil))
 
-    ;; Extract TODO state
-    (when (looking-at (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern))
-      (setq todo-state (match-string 1))
-
-      ;; Get issue ID, identifier, and team ID from properties
-      (save-excursion
-        (forward-line)
-        (when (looking-at ":PROPERTIES:")
-          (forward-line)
-          (while (and (not (looking-at ":END:"))
-                      (not (eobp)))
-            (cond
-             ((looking-at ":ID:\\s-+\\(.+\\)")
-              (setq issue-id (match-string 1)))
-             ((looking-at ":ID-LINEAR:\\s-+\\(.+\\)")
-              (setq issue-identifier (match-string 1)))
-             ;; Extract team ID from the TEAM property
-             ((looking-at ":TEAM:\\s-+\\(.+\\)")
-              ;; Fetch the actual team ID based on team name
-              (let ((team-name (match-string 1)))
-                (setq team-id (linear-emacs--get-team-id-by-name team-name)))))
-            (forward-line)))))
+    ;; Only extract properties if this heading has a valid Linear TODO state
+    (when (and todo-state (member todo-state valid-states))
+      (setq issue-id (org-entry-get nil "ID"))
+      (setq issue-identifier (org-entry-get nil "ID-LINEAR"))
+      (let ((team-name (org-entry-get nil "TEAM")))
+        (when team-name
+          (setq team-id (linear-emacs--get-team-id-by-name team-name)))))
 
     ;; Return properties as plist
     (list :todo-state todo-state
@@ -952,7 +945,8 @@ CALLBACK is called with the list of states."
       (let ((todo-states-pattern (linear-emacs--get-todo-states-pattern)))
         (while (re-search-forward (format "^\\*\\*\\* \\(%s\\)" todo-states-pattern) nil t)
           (beginning-of-line)
-          (linear-emacs--process-heading-at-point))))))
+          (linear-emacs--process-heading-at-point)
+          (forward-line))))))
 
 (defun linear-emacs-sync-current-heading-to-linear ()
   "Sync the current org heading's TODO state to Linear API.
@@ -1014,6 +1008,13 @@ CALLBACK is called with the list of states."
    ((eq priority-num 4) "Low")
    (t "Medium")))
 
+(defun linear-emacs--format-date-as-org (date-string)
+  "Convert Linear DATE-STRING (YYYY-MM-DD) to org date format.
+Returns nil if DATE-STRING is nil or invalid."
+  (when (and date-string (not (eq date-string 'null)) (stringp date-string))
+    (ignore-errors
+      (format-time-string "<%Y-%m-%d %a>" (date-to-time date-string)))))
+
 (defun linear-emacs--format-issue-as-org-entry (issue)
   "Format a Linear ISSUE as an \='org-mode\=' entry."
   (let* ((id (cdr (assoc 'id issue)))
@@ -1041,6 +1042,13 @@ CALLBACK is called with the list of states."
                                   labels-nodes ", "))
                    ""))
          (link (format "https://linear.app/issue/%s" identifier))
+         (cycle-data (cdr (assoc 'cycle issue)))
+         (cycle-end (and cycle-data
+                         (not (eq cycle-data 'null))
+                         (cdr (assoc 'endsAt cycle-data))))
+         (deadline (linear-emacs--format-date-as-org cycle-end))
+         (scheduled (or (linear-emacs--format-date-as-org (cdr (assoc 'startedAt issue)))
+                        (format-time-string "<%Y-%m-%d %a>")))
          (result ""))
 
     ;; Build the org entry as a string
@@ -1048,17 +1056,25 @@ CALLBACK is called with the list of states."
     (let ((sanitized-title (replace-regexp-in-string "\\[\\|\\]" "" title)))
       (setq result (concat result (format "*** %s %s %s\n" todo-state priority sanitized-title))))
 
+    ;; Add planning line (SCHEDULED and/or DEADLINE)
+    (when (or scheduled deadline)
+      (setq result (concat result
+                           (when scheduled (format "SCHEDULED: %s" scheduled))
+                           (when (and scheduled deadline) " ")
+                           (when deadline (format "DEADLINE: %s" deadline))
+                           "\n")))
+
     (setq result (concat result ":PROPERTIES:\n"))
     (setq result (concat result (format ":ID:       %s\n" id)))
     (setq result (concat result (format ":ID-LINEAR: %s\n" identifier)))
     (setq result (concat result (format ":TEAM: %s\n" team-name)))
 
-    ;; Format description properly for multi-line content
-    (setq result (concat result ":DESCRIPTION: |\n"))
-    ;; Process description to ensure proper org formatting
-    (let ((desc-lines (split-string description "\n")))
-      (dolist (line desc-lines)
-        (setq result (concat result (format "  %s\n" (replace-regexp-in-string "\"" "'" line))))))
+    ;; Format description as single line (org properties must be single-line)
+    ;; Replace newlines with spaces and clean up for org compatibility
+    (let ((clean-desc (replace-regexp-in-string "[\n\r]+" " " description)))
+      (setq clean-desc (replace-regexp-in-string "\"" "'" clean-desc))
+      (setq clean-desc (string-trim clean-desc))
+      (setq result (concat result (format ":DESCRIPTION: %s\n" clean-desc))))
 
     (setq result (concat result (format ":PRIORITY: %s\n" (linear-emacs--get-linear-priority-name priority-num))))
 
@@ -1122,15 +1138,11 @@ This is now async and shows progress during fetching."
              (condition-case err
                  (progn
                    (with-temp-buffer
-                     ;; Insert header
-                     (insert ":PROPERTIES:\n")
-                     (insert ":ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae\n")
+                     ;; Insert header - keywords must be OUTSIDE the PROPERTIES drawer
                      (insert "#+title: Linear issues assigned to me\n")
-                     (insert "#+TAGS: :\n")
-                     (insert "#+filetags: :twai:b:\n")
                      (insert "#+STARTUP: overview\n")
-                     (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
-                     (insert ":END:\n\n")
+                     (insert "#+TODO: TODO NEXT WAITING | DONE\n")
+                     (insert "#+filetags: :twai:b:\n\n")
 
                      ;; Insert issues
                      (dolist (issue issues)
