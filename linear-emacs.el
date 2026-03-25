@@ -1129,7 +1129,11 @@ This is now async and shows progress during fetching."
                      (insert "#+TAGS: :\n")
                      (insert "#+filetags: :twai:b:\n")
                      (insert "#+STARTUP: overview\n")
-                     (insert "#+TODO: TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE\n")
+                     (insert (format "#+TODO: %s\n"
+                                    (if (bound-and-true-p org-todo-keywords)
+                                        (let ((seq (car org-todo-keywords)))
+                                          (mapconcat #'identity (cdr seq) " "))
+                                      "TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE")))
                      (insert ":END:\n\n")
 
                      ;; Insert issues
