@@ -1077,6 +1077,77 @@ CALLBACK is called with the list of states."
 
 ;;; User-facing Commands (Async)
 
+(defun linear-emacs--build-org-content (issues)
+  "Build the org-mode content string for the linear org file from ISSUES.
+Returns the rendered content as a string. Pure function -- no side effects."
+  (with-temp-buffer
+    ;; Insert header (#+keywords must be outside :PROPERTIES: drawer)
+    (insert "#+title: Linear issues assigned to me\n")
+    (insert "#+TAGS: :\n")
+    (insert "#+filetags: :twai:b:\n")
+    (insert "#+STARTUP: overview\n")
+    (insert (format "#+TODO: %s\n"
+                   (if (bound-and-true-p org-todo-keywords)
+                       (let ((seq (car org-todo-keywords)))
+                         (mapconcat #'identity (cdr seq) " "))
+                     "TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE")))
+    (insert ":PROPERTIES:\n")
+    (insert ":ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae\n")
+    (insert ":END:\n\n")
+
+    ;; Insert issues
+    (dolist (issue issues)
+      (insert (linear-emacs--format-issue-as-org-entry issue)))
+
+    (buffer-string)))
+
+(defun linear-emacs--update-org-from-issues (issues)
+  "Update `linear-emacs-org-file-path' with rendered ISSUES, buffer-aware.
+
+Behavior depends on whether the file is currently visited in a buffer:
+
+- No buffer visiting the file: write atomically to disk via `with-temp-file'.
+- Buffer exists and is unmodified: replace its contents in place and save,
+  preserving point and avoiding a modtime mismatch warning.
+- Buffer exists and has unsaved edits: do not overwrite. Log and emit a
+  message asking the user to save or revert before re-running."
+  (let* ((org-file-path linear-emacs-org-file-path)
+         (new-content (linear-emacs--build-org-content issues))
+         (existing-buf (find-buffer-visiting org-file-path)))
+    (cond
+     ;; Branch A: no buffer visits the file -- atomic file write.
+     ((not existing-buf)
+      (linear-emacs--log "Writing %d issues to %s (no buffer)"
+                         (length issues) org-file-path)
+      (make-directory (file-name-directory org-file-path) t)
+      (with-temp-file org-file-path
+        (insert new-content))
+      (message "Updated Linear issues in %s with %d active issues"
+               org-file-path (length issues)))
+
+     ;; Branch B: buffer exists and is clean -- replace contents in place.
+     ((not (buffer-modified-p existing-buf))
+      (linear-emacs--log "Writing %d issues to %s (clean buffer)"
+                         (length issues) org-file-path)
+      (with-current-buffer existing-buf
+        (let ((recorded-point (point))
+              (inhibit-read-only t))
+          (erase-buffer)
+          (insert new-content)
+          (save-buffer)
+          (goto-char (min recorded-point (point-max)))))
+      (message "Updated Linear issues in %s with %d active issues"
+               org-file-path (length issues)))
+
+     ;; Branch C: buffer is dirty -- defer, do not overwrite.
+     (t
+      (linear-emacs--log
+       "Linear refresh deferred: %s has unsaved changes (%d issues not written)"
+       org-file-path (length issues))
+      (message
+       "Linear refresh deferred: %s has unsaved changes. Save or revert, then re-run M-x linear-emacs-list-issues."
+       (file-name-nondirectory org-file-path))))))
+
 ;;;###autoload
 (defun linear-emacs-list-issues (&optional project-id)
   "Update linear.org file with assigned Linear issues and display it.
@@ -1090,8 +1161,7 @@ This is now async and shows progress during fetching."
 
   (linear-emacs-get-issues-async
    (lambda (issues)
-     (let* ((org-file-path linear-emacs-org-file-path)
-            (include-statuses (linear-emacs--get-included-linear-states)))
+     (let ((include-statuses (linear-emacs--get-included-linear-states)))
 
        (linear-emacs--log "Retrieved %d total issues before filtering" (length issues))
 
@@ -1118,37 +1188,9 @@ This is now async and shows progress during fetching."
              (linear-emacs--log "After filtering by status, have %d issues" (length issues))
              (linear-emacs--progress "Writing %d issues to org file..." (length issues))
 
-             ;; Update org file
+             ;; Update org file (buffer-aware)
              (condition-case err
-                 (progn
-                   (with-temp-buffer
-                     ;; Insert header
-                     (insert ":PROPERTIES:\n")
-                     (insert ":ID:       a12acb12-8a69-4d15-a846-21e20ed2f3ae\n")
-                     (insert "#+title: Linear issues assigned to me\n")
-                     (insert "#+TAGS: :\n")
-                     (insert "#+filetags: :twai:b:\n")
-                     (insert "#+STARTUP: overview\n")
-                     (insert (format "#+TODO: %s\n"
-                                    (if (bound-and-true-p org-todo-keywords)
-                                        (let ((seq (car org-todo-keywords)))
-                                          (mapconcat #'identity (cdr seq) " "))
-                                      "TODO IN-PROGRESS IN-REVIEW BACKLOG BLOCKED | DONE")))
-                     (insert ":END:\n\n")
-
-                     ;; Insert issues
-                     (dolist (issue issues)
-                       (insert (linear-emacs--format-issue-as-org-entry issue)))
-
-                     ;; Write to file
-                     (linear-emacs--log "Writing %d issues to %s" (length issues) org-file-path)
-                     (make-directory (file-name-directory org-file-path) t) ;; Ensure directory exists
-                     (write-region (point-min) (point-max) org-file-path nil 'quiet))
-
-                   ;; Open the org file
-                   ;; (find-file org-file-path)  ; Commented out to avoid buffer switching before org-todo-list
-                   (message "Updated Linear issues in %s with %d active issues"
-                            org-file-path (length issues)))
+                 (linear-emacs--update-org-from-issues issues)
 
                ;; Handle errors
                (error (progn
